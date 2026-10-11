@@ -11,7 +11,7 @@ module.exports = async (req, res) => {
   if (!keySecret) return lib.json(res, 501, { error: "Payments are not configured yet." });
   let a;
   try { a = await lib.requireFirebase(req); }
-  catch (e) { return lib.json(res, e.code || 500, { error: e.message }); }
+  catch (e) { return lib.json(res, lib.errCode(e), { error: e.message }); }
 
   const body = await lib.readBody(req);
   const { orderId, paymentId, signature, packId } = body;
