@@ -170,13 +170,14 @@ function paletteCommands(){
   return [
     {group:"Go to", label:"Overview", hint:"⌘1", run:()=>location.hash="#/overview"},
     {group:"Go to", label:"Models", hint:"⌘2", run:()=>location.hash="#/models"},
-    {group:"Go to", label:"API Keys", hint:"⌘3", run:()=>location.hash="#/keys"},
-    {group:"Go to", label:"Usage", hint:"⌘4", run:()=>location.hash="#/usage"},
-    {group:"Go to", label:"Logs", hint:"⌘5", run:()=>location.hash="#/logs"},
-    {group:"Go to", label:"Settings", hint:"⌘6", run:()=>location.hash="#/settings"},
+    {group:"Go to", label:"Playground", hint:"⌘3", run:()=>location.hash="#/playground"},
+    {group:"Go to", label:"API Keys", hint:"⌘4", run:()=>location.hash="#/keys"},
+    {group:"Go to", label:"Usage", hint:"⌘5", run:()=>location.hash="#/usage"},
+    {group:"Go to", label:"Logs", hint:"⌘6", run:()=>location.hash="#/logs"},
+    {group:"Go to", label:"Settings", hint:"⌘7", run:()=>location.hash="#/settings"},
     {group:"Actions", label:"Create API key", run:()=>openCreateKey()},
     {group:"Actions", label:"Buy credits", run:()=>openBuyCredits()},
-    {group:"Actions", label:"Try MNAI 6", run:()=>{ const m=CATALOG.find(x=>x.slug==="mnai6"); if(m) openPlayground(m); }},
+    {group:"Actions", label:"Try MNAI 6", run:()=>{ location.hash="#/playground?model=mnai6"; }},
     {group:"Actions", label:"Toggle theme", run:()=>cycleTheme()},
     {group:"Actions", label:"Sign out", run:()=>AUTH.signOut()},
   ];
@@ -452,76 +453,146 @@ function applyTheme(){
   document.documentElement.dataset.theme=t;
 }
 
-/* ---------- playground ---------- */
-let PG = null; // { slug, label, free, rate, history: [] }
+/* ---------- playground (full page) ---------- */
+const PG_HIST = {};   // slug -> [{role, content}]
+let PG_SLUG = "mnai6";
+
 function openPlayground(m){
-  if (!m.free && (PROFILE.credits||0) < 1) {
+  // "Try" entry point: credit check, then go to the playground page
+  if (!m.free && (PROFILE.credits || 0) < 1) {
     toast("This model needs credits — grab some first.", "err");
     openBuyCredits();
     return;
   }
-  PG = { slug: m.slug, label: m.label, free: m.free, rate: m.rate || 0, history: [] };
-  $("#pgTitle").textContent = m.label;
-  $("#pgSub").innerHTML = m.free ? '<span class="badge green">FREE</span>'
-    : `<span class="badge amber">${m.rate} credits / 1K tokens</span> <span style="color:var(--text-3)">· balance ${fmtInt(PROFILE.credits||0)}</span>`;
-  $("#pgMsgs").innerHTML = `<div class="pg-msg ai">Hey, I'm ${esc(m.label)} — ask me anything.${m.free?"":" This one uses credits."}</div>`;
-  $("#pgOverlay").classList.remove("hidden");
-  setTimeout(()=>$("#pgText").focus(), 60);
+  location.hash = "#/playground?model=" + m.slug;
 }
-function closePlayground(){ $("#pgOverlay").classList.add("hidden"); PG=null; }
-function pgAdd(role, text, meta){
+function pgModel(){ return modelBySlug(PG_SLUG); }
+
+function pagePlayground(){
+  const free = CATALOG.filter(m => m.free), pro = CATALOG.filter(m => !m.free);
+  const opt = m => `<option value="${m.slug}" ${m.slug===PG_SLUG?"selected":""}>${esc(m.label)}${m.free?" — free":" — "+m.rate+" cr/1K"}</option>`;
+  return `
+  <div class="page-head"><div><h1>Playground</h1><p>Chat with any model directly. Free models cost nothing.</p></div>
+    <div class="page-actions"><button class="btn" onclick="openBuyCredits()"><span>Buy credits</span></button></div></div>
+  <div class="card pg-page">
+    <div class="pg-modelbar">
+      <select id="pgModelSel">
+        <optgroup label="Free">${free.map(opt).join("")}</optgroup>
+        <optgroup label="Credit-based">${pro.map(opt).join("")}</optgroup>
+      </select>
+      <span id="pgCost"></span>
+    </div>
+    <div id="pgChat"></div>
+    <div class="pg-composer">
+      <input type="text" id="pgInput" placeholder="Ask anything…" autocomplete="off">
+      <button class="btn primary" id="pgGo"><svg viewBox="0 0 24 24"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4z"/></svg></button>
+    </div>
+  </div>`;
+}
+function pgCostHTML(){
+  const m = pgModel();
+  return m.free ? '<span class="badge green">FREE</span>'
+    : `<span class="badge amber">${m.rate} credits / 1K tokens</span> <span style="color:var(--text-3);font-size:12.5px">balance ${fmtInt(PROFILE.credits||0)}</span>`;
+}
+function pgRenderHist(){
+  const chat = $("#pgChat"); if (!chat) return;
+  const hist = PG_HIST[PG_SLUG] || [];
+  chat.innerHTML = "";
+  if (!hist.length) pgAddMsg("ai", `Hey, I'm ${pgModel().label} — ask me anything.`);
+  hist.forEach(m => pgAddMsg(m.role === "user" ? "user" : "ai", m.content, m.meta));
+}
+function pgAddMsg(role, text, meta){
   const d = document.createElement("div");
   d.className = "pg-msg " + role;
   d.innerHTML = esc(text) + (meta ? `<div class="meta">${esc(meta)}</div>` : "");
-  $("#pgMsgs").appendChild(d);
-  $("#pgMsgs").scrollTop = $("#pgMsgs").scrollHeight;
+  const chat = $("#pgChat");
+  chat.appendChild(d);
+  chat.scrollTop = chat.scrollHeight;
   return d;
 }
-async function pgSend(){
-  if (!PG) return;
-  const inp = $("#pgText"), text = inp.value.trim();
+function mountPlayground(){
+  const q = new URLSearchParams((location.hash.split("?")[1] || ""));
+  const want = q.get("model");
+  if (want && CATALOG.some(m => m.slug === want)) PG_SLUG = want;
+  if (!CATALOG.some(m => m.slug === PG_SLUG)) PG_SLUG = (CATALOG[0] || {}).slug || "mnai6";
+  const sel = $("#pgModelSel");
+  sel.value = PG_SLUG;
+  $("#pgCost").innerHTML = pgCostHTML();
+  pgRenderHist();
+  sel.onchange = () => {
+    const m = modelBySlug(sel.value);
+    if (!m.free && (PROFILE.credits || 0) < 1) {
+      toast("This model needs credits — grab some first.", "err");
+      sel.value = PG_SLUG;
+      openBuyCredits();
+      return;
+    }
+    PG_SLUG = m.slug;
+    $("#pgCost").innerHTML = pgCostHTML();
+    pgRenderHist();
+  };
+  $("#pgGo").onclick = pgSendPage;
+  $("#pgInput").addEventListener("keydown", e => { if (e.key === "Enter") pgSendPage(); });
+  setTimeout(() => { const i = $("#pgInput"); if (i) i.focus(); }, 80);
+}
+async function pgSendPage(){
+  const inp = $("#pgInput"), text = inp.value.trim();
   if (!text) return;
+  const m = pgModel();
+  if (!m.free && (PROFILE.credits || 0) < 1) { toast("Not enough credits.", "err"); openBuyCredits(); return; }
   inp.value = "";
-  PG.history.push({ role: "user", content: text });
-  pgAdd("user", text);
-  const typing = pgAdd("ai", "");
+  const hist = PG_HIST[m.slug] = PG_HIST[m.slug] || [];
+  hist.push({ role: "user", content: text });
+  pgAddMsg("user", text);
+  const typing = pgAddMsg("ai", "");
   typing.innerHTML = '<span class="typing"><i></i><i></i><i></i></span>';
-  $("#pgSend").disabled = true;
+  $("#pgGo").disabled = true;
   try {
     const t = await idToken();
-    const r = await fetch("/api/mnaiapi/" + PG.slug, {
+    const r = await fetch("/api/mnaiapi/" + m.slug, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: "Bearer " + t },
-      body: JSON.stringify({ messages: PG.history.slice(-12), stream: true, max_tokens: 1024 }),
+      body: JSON.stringify({ messages: hist.slice(-12), stream: true, max_tokens: 1024 }),
     });
+    let full = "", meta = "";
+    const ct = r.headers.get("content-type") || "";
     if (!r.ok) {
-      const j = await r.json().catch(()=>({}));
-      throw new Error(j.error || ("Request failed ("+r.status+")"));
+      const j = await r.json().catch(() => ({}));
+      throw new Error(j.error || ("Request failed (" + r.status + ")"));
     }
-    const reader = r.body.getReader(), decoder = new TextDecoder();
-    let buf = "", full = "";
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buf += decoder.decode(value, { stream: true });
-      const parts = buf.split("\n\n"); buf = parts.pop();
-      for (const p of parts) {
-        if (p.includes("[DONE]")) continue;
-        const mm = p.match(/"delta"\s*:\s*\{\s*"content"\s*:\s*"((?:[^"\\]|\\.)*)"/);
-        if (mm) { try { full += JSON.parse('"'+mm[1]+'"'); } catch {} }
+    if (ct.includes("text/event-stream")) {
+      // streaming SSE
+      const reader = r.body.getReader(), decoder = new TextDecoder();
+      let buf = "";
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const parts = buf.split("\n\n"); buf = parts.pop();
+        for (const p of parts) {
+          if (p.includes("[DONE]")) continue;
+          const mm = p.match(/"delta"\s*:\s*\{\s*"content"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+          if (mm) { try { full += JSON.parse('"' + mm[1] + '"'); } catch {} }
+        }
+        typing.textContent = full;
+        $("#pgChat").scrollTop = $("#pgChat").scrollHeight;
       }
-      typing.textContent = full;
-      $("#pgMsgs").scrollTop = $("#pgMsgs").scrollHeight;
+    } else {
+      // plain JSON (e.g. instant local answers)
+      const j = await r.json();
+      full = (j.choices && j.choices[0] && j.choices[0].message.content) || "";
+      if (j.usage) meta = `${fmtInt(j.usage.total_tokens)} tokens`;
+      if (j.credits_charged) meta += (meta ? " · " : "") + `-${j.credits_charged} credits`;
     }
-    PG.history.push({ role: "assistant", content: full });
-    typing.innerHTML = esc(full);
-    // refresh balance quietly
-    api("/api/me").then(me => { PROFILE = me; $("#creditsVal").textContent = fmtInt(me.credits||0); }).catch(()=>{});
+    if (!full) throw new Error("Empty response from model.");
+    hist.push({ role: "assistant", content: full, meta });
+    typing.innerHTML = esc(full) + (meta ? `<div class="meta">${esc(meta)}</div>` : "");
+    api("/api/me").then(me => { PROFILE = me; $("#creditsVal").textContent = fmtInt(me.credits || 0); $("#pgCost").innerHTML = pgCostHTML(); }).catch(() => {});
   } catch (e) {
     typing.innerHTML = esc("Error: " + e.message);
-    if (e.message.includes("credits")) setTimeout(openBuyCredits, 600);
+    if (/credit/i.test(e.message)) setTimeout(openBuyCredits, 700);
   }
-  $("#pgSend").disabled = false;
+  $("#pgGo").disabled = false;
 }
 
 /* ---------- buy credits ---------- */
@@ -600,6 +671,7 @@ function bindLogin(){
 const ROUTES = {
   overview: { page: pageOverview, mount: mountOverview, title: "Overview" },
   models:   { page: pageModels,   mount: mountModels,   title: "Models" },
+  playground: { page: pagePlayground, mount: mountPlayground, title: "Playground" },
   keys:     { page: pageKeys,     mount: mountKeys,     title: "API Keys" },
   usage:    { page: pageUsage,    mount: mountUsage,    title: "Usage" },
   logs:     { page: pageLogs,     mount: mountLogs,     title: "Logs" },
@@ -641,10 +713,10 @@ document.addEventListener("keydown", e=>{
     if (e.key==="Enter"){ const items=$$(".pal-item"); if(items[palSel]) items[palSel].click(); }
     return;
   }
-  if (e.key==="Escape"){ closeModal(); closePlayground(); }
-  if (mod && ["1","2","3","4","5","6"].includes(e.key)){
+  if (e.key==="Escape"){ closeModal(); }
+  if (mod && ["1","2","3","4","5","6","7"].includes(e.key)){
     e.preventDefault();
-    location.hash = "#/"+["overview","models","keys","usage","logs","settings"][+e.key-1];
+    location.hash = "#/"+["overview","models","playground","keys","usage","logs","settings"][+e.key-1];
   }
 });
 
@@ -656,10 +728,7 @@ $("#paletteBtn").onclick = openPalette;
 $("#paletteInput").addEventListener("input", e=>renderPalette(e.target.value));
 $("#paletteOverlay").addEventListener("click", e=>{ if(e.target.id==="paletteOverlay") closePalette(); });
 $("#modalOverlay").addEventListener("click", e=>{ if(e.target.id==="modalOverlay") closeModal(); });
-$("#pgOverlay").addEventListener("click", e=>{ if(e.target.id==="pgOverlay") closePlayground(); });
-$("#pgClose").onclick = closePlayground;
-$("#pgSend").onclick = pgSend;
-$("#pgText").addEventListener("keydown", e=>{ if(e.key==="Enter") pgSend(); });
+
 $("#newKeyBtn").onclick = ()=>{ location.hash="#/keys"; setTimeout(openCreateKey,80); };
 $("#themeBtn").onclick = cycleTheme;
 $("#menuBtn").onclick = ()=>document.body.classList.toggle("nav-open");
