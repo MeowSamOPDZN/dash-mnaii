@@ -50,7 +50,8 @@ function initFirebase(){
       const av = (name[0]||"?").toUpperCase();
       $("#sideAvatar").textContent = av; $("#userAvatar").textContent = av;
       await refreshAll();
-    } else {
+      updateBell();
+    } else if (currentRoute() !== "share") {
       $("#loginOverlay").classList.remove("hidden");
     }
   });
@@ -82,6 +83,7 @@ async function refreshAll(){
   try {
     const [me, models] = await Promise.all([ api("/api/me"), api("/api/models", {auth:false}) ]);
     PROFILE = me; CATALOG = models.models || [];
+    try { const w = await api("/api/webhooks"); PROFILE.hookCount = (w.hooks||[]).length; } catch(e){}
   } catch (e) {
     // backend may not be configured yet
     PROFILE = PROFILE || { credits: 0, keys: [], usage30d: [], recentLogs: [], ledger: [] };
@@ -171,10 +173,13 @@ function paletteCommands(){
     {group:"Go to", label:"Overview", hint:"⌘1", run:()=>location.hash="#/overview"},
     {group:"Go to", label:"Models", hint:"⌘2", run:()=>location.hash="#/models"},
     {group:"Go to", label:"Playground", hint:"⌘3", run:()=>location.hash="#/playground"},
-    {group:"Go to", label:"API Keys", hint:"⌘4", run:()=>location.hash="#/keys"},
-    {group:"Go to", label:"Usage", hint:"⌘5", run:()=>location.hash="#/usage"},
-    {group:"Go to", label:"Logs", hint:"⌘6", run:()=>location.hash="#/logs"},
-    {group:"Go to", label:"Settings", hint:"⌘7", run:()=>location.hash="#/settings"},
+    {group:"Go to", label:"Webhooks", hint:"⌘4", run:()=>location.hash="#/webhooks"},
+    {group:"Go to", label:"Integrations", hint:"⌘5", run:()=>location.hash="#/integrations"},
+    {group:"Go to", label:"Docs", hint:"⌘6", run:()=>location.hash="#/docs"},
+    {group:"Go to", label:"API Keys", hint:"⌘7", run:()=>location.hash="#/keys"},
+    {group:"Go to", label:"Usage", hint:"⌘8", run:()=>location.hash="#/usage"},
+    {group:"Go to", label:"Logs", hint:"⌘9", run:()=>location.hash="#/logs"},
+    {group:"Go to", label:"Settings", hint:"⌘0", run:()=>location.hash="#/settings"},
     {group:"Actions", label:"Create API key", run:()=>openCreateKey()},
     {group:"Actions", label:"Buy credits", run:()=>openBuyCredits()},
     {group:"Actions", label:"Try MNAI 6", run:()=>{ location.hash="#/playground?model=mnai6"; }},
@@ -222,6 +227,7 @@ function bindCopy(root){
 
 /* ---------- overview ---------- */
 function pageOverview(){
+  const onboard = onboardingCard();
   const s30 = PROFILE.usage30d || [];
   const sum = f => s30.reduce((a,d)=>a+(d[f]||0),0);
   const req=sum("requests"), tok=sum("tokens"), cred=sum("credits"), err=sum("errors");
@@ -231,6 +237,7 @@ function pageOverview(){
   const act = (PROFILE.keys||[]).filter(k=>!k.revoked).length;
   const logs = (PROFILE.recentLogs||[]).slice(0,6);
   return `
+  ${onboard}
   <div class="page-head"><div><h1>Overview</h1><p>Your MNAI API at a glance — last 30 days.</p></div>
     <div class="page-actions"><button class="btn primary" onclick="openPlayground(CATALOG.find(m=>m.slug==='mnai6')||{slug:'mnai6',label:'MNAI 6'})"><span>Try MNAI 6</span></button></div></div>
   <div class="grid stats">
@@ -264,6 +271,7 @@ function logRow(l){
     <span style="color:var(--text-3);font-size:12px"> · ${timeAgo(l.ts)}</span></div></div>`;
 }
 function mountOverview(){
+  mountOnboarding();
   const pts = (PROFILE.usage30d||[]).map((d,i)=>({ t: Date.now()-(29-i)*864e5, v: d.requests||0, label: d.date }));
   areaChart($("#chReq"), pts, { label:"requests" });
   bindTry();
@@ -307,12 +315,12 @@ function pageKeys(){
   const rows = keys.map(k=>`
     <tr>
       <td><b>${esc(k.name)}</b><div style="color:var(--text-3);font-size:12px;margin-top:2px">${k.kind==="free"?'<span class="badge green">FREE KEY</span>':'<span class="badge amber">PRO KEY</span>'} · created ${timeAgo(k.createdAt)}</div></td>
-      <td><span class="mono">${maskOf(k)}</span></td>
+      <td><span class="mono">${maskOf(k)}</span>${k.quotaMonthly||k.ratePerMin||k.ipAllowlist?`<div style="color:var(--text-3);font-size:11px;margin-top:2px">${[k.quotaMonthly?k.quotaMonthly+"/mo":"",k.ratePerMin?k.ratePerMin+"/min":"",k.ipAllowlist?"IP-locked":""].filter(Boolean).join(" · ")}</div>`:""}</td>
       <td class="mono">${fmt(k.requests||0)}</td>
       <td class="mono" style="color:var(--amber)">${fmtInt(k.creditsUsed||0)}</td>
       <td style="color:var(--text-3);font-size:12.5px">${k.lastUsedAt?timeAgo(k.lastUsedAt):"never"}</td>
       <td>${statusBadge(k)}</td>
-      <td style="text-align:right">${k.revoked?"":'<button class="btn sm danger" data-revoke="'+k.id+'">Revoke</button>'}</td>
+      <td style="text-align:right;white-space:nowrap">${k.revoked?"":'<button class="btn sm" data-editkey="'+k.id+'">Edit</button> <button class="btn sm danger" data-revoke="'+k.id+'">Revoke</button>'}</td>
     </tr>`).join("");
   return `
   <div class="page-head"><div><h1>API Keys</h1><p>Free keys (<span class="mono">mnai-free-sk-…</span>) unlock free models only. Pro keys (<span class="mono">mnai_sk_…</span>) unlock everything with credits.</p></div>
@@ -322,6 +330,7 @@ function pageKeys(){
   ${keys.length?"":'<div class="empty"><svg viewBox="0 0 24 24"><circle cx="8" cy="15" r="4"/><path d="M11 12l9-9m-4 4l3 3"/></svg><h3>No API keys yet</h3><p>Create your first key to start calling the API.</p></div>'}</div>`;
 }
 function mountKeys(){
+  $$("[data-editkey]").forEach(b=>b.onclick=()=>openEditKey((PROFILE.keys||[]).find(x=>x.id===b.dataset.editkey)));
   $$("[data-revoke]").forEach(b=>b.onclick=()=>{
     const k=(PROFILE.keys||[]).find(x=>x.id===b.dataset.revoke);
     openModal(`<div class="modal-head"><div><h2>Revoke key?</h2><p>“${esc(k.name)}” stops working immediately.</p></div><button class="modal-x" onclick="closeModal()">×</button></div>
@@ -340,6 +349,12 @@ function openCreateKey(){
   <div class="modal-head"><div><h2>Create API key</h2><p>The full key is shown once — copy it immediately.</p></div><button class="modal-x" onclick="closeModal()">×</button></div>
   <div class="modal-body">
     <div class="field"><label>Key name</label><input type="text" id="nkName" placeholder="e.g. My website" maxlength="60"></div>
+    <div class="field"><label>Limits <span style="color:var(--text-3);font-weight:400">(optional)</span></label>
+      <div class="form-grid">
+        <div class="field" style="margin:0"><label style="font-size:11.5px">Monthly quota</label><input type="number" id="nkQuota" placeholder="Unlimited" min="1"></div>
+        <div class="field" style="margin:0"><label style="font-size:11.5px">Rate / minute</label><input type="number" id="nkRate" placeholder="Unlimited" min="1"></div>
+        <div class="field full" style="margin:0"><label style="font-size:11.5px">IP allowlist</label><input type="text" id="nkIps" placeholder="e.g. 1.2.3.4, 5.6.7.8 — empty = anywhere"></div>
+      </div></div>
     <div class="field"><label>Key type</label><div class="ktype-grid">
       <div class="ktype on" data-k="free"><b>Free key</b><span class="mono">mnai-free-sk-…</span><p>Free models only: MNAI 6, MNAI 7, Glyph 1, Glyph 1.5.</p></div>
       <div class="ktype" data-k="pro"><b>Pro key</b><span class="mono">mnai_sk_…</span><p>All models. Credit models deduct credits from your wallet.</p></div>
@@ -352,7 +367,8 @@ function openCreateKey(){
     const name=$("#nkName").value.trim()||"Untitled key";
     $("#nkGo").disabled=true; $("#nkGo").innerHTML='<span class="spin"></span>';
     try{
-      const k=await api("/api/keys",{method:"POST",body:{name,kind:newKeyKind}});
+      const k=await api("/api/keys",{method:"POST",body:{name,kind:newKeyKind,
+        quotaMonthly:$("#nkQuota").value||null, ratePerMin:$("#nkRate").value||null, ipAllowlist:$("#nkIps").value.trim()||""}});
       openModal(`
       <div class="modal-head"><div><h2>Key created</h2><p>Copy it now — you won't see it again.</p></div><button class="modal-x" onclick="closeModal()">×</button></div>
       <div class="modal-body">
@@ -366,12 +382,53 @@ function openCreateKey(){
   };
 }
 
+
+function openEditKey(k){
+  if (!k) return;
+  openModal(`
+  <div class="modal-head"><div><h2>Edit key</h2><p>“${esc(k.name)}” — limits apply instantly.</p></div><button class="modal-x" onclick="closeModal()">×</button></div>
+  <div class="modal-body">
+    <div class="field"><label>Key name</label><input type="text" id="ekName" value="${esc(k.name)}" maxlength="60"></div>
+    <div class="form-grid">
+      <div class="field" style="margin:0"><label>Monthly quota</label><input type="number" id="ekQuota" value="${k.quotaMonthly||""}" placeholder="Unlimited" min="1"></div>
+      <div class="field" style="margin:0"><label>Rate / minute</label><input type="number" id="ekRate" value="${k.ratePerMin||""}" placeholder="Unlimited" min="1"></div>
+      <div class="field full" style="margin:0"><label>IP allowlist</label><input type="text" id="ekIps" value="${esc(k.ipAllowlist||"")}" placeholder="empty = anywhere"></div>
+    </div>
+    <div class="warn" style="margin-top:14px"><svg viewBox="0 0 24 24"><path d="M12 9v4m0 4v.1M10.3 3.9L1.8 18a2 2 0 001.7 3h17a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z"/></svg><span>Regenerating replaces the key — the old one stops working immediately.</span></div>
+  </div>
+  <div class="modal-foot"><button class="btn" onclick="closeModal()">Cancel</button>
+    <button class="btn danger" id="ekRegen">Regenerate</button>
+    <button class="btn blue" id="ekSave">Save</button></div>`);
+  $("#ekSave").onclick = async ()=>{
+    $("#ekSave").disabled = true;
+    try {
+      await api("/api/keys",{method:"PUT",body:{id:k.id, name:$("#ekName").value.trim()||k.name,
+        quotaMonthly:$("#ekQuota").value||null, ratePerMin:$("#ekRate").value||null, ipAllowlist:$("#ekIps").value.trim()}});
+      toast("Key updated"); closeModal(); await refreshAll();
+    } catch(e){ toast(e.message,"err"); $("#ekSave").disabled = false; }
+  };
+  $("#ekRegen").onclick = async ()=>{
+    if (!confirm("Regenerate this key? The old key stops working immediately.")) return;
+    $("#ekRegen").disabled = true;
+    try {
+      const r = await api("/api/keys",{method:"PUT",body:{id:k.id, regenerate:true}});
+      openModal(`
+      <div class="modal-head"><div><h2>Key regenerated</h2><p>Copy it now — you won't see it again.</p></div><button class="modal-x" onclick="closeModal()">×</button></div>
+      <div class="modal-body"><div class="key-reveal"><code>${esc(r.secret)}</code><button class="copy-btn" id="rgCopy"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 012-2h10"/></svg></button></div></div>
+      <div class="modal-foot"><button class="btn primary" id="rgDone">Done</button></div>`);
+      $("#rgCopy").onclick = ()=>copyText(r.secret,"API key copied");
+      $("#rgDone").onclick = async()=>{ closeModal(); await refreshAll(); };
+    } catch(e){ toast(e.message,"err"); $("#ekRegen").disabled = false; }
+  };
+}
+
 /* ---------- usage ---------- */
 let usageRange="30D", usageMetric="requests";
 function pageUsage(){
   return `
   <div class="page-head"><div><h1>Usage</h1><p>Requests, tokens and credits across your account.</p></div>
     <div class="page-actions">
+      <button class="btn sm" id="csvBtn"><span>Export CSV</span></button>
       <div class="seg" id="uRange">${["7D","30D"].map(r=>`<button data-r="${r}" class="${r===usageRange?"on":""}">${r}</button>`).join("")}</div>
       <div class="seg" id="uMetric">${["requests","tokens","credits"].map(m=>`<button data-m="${m}" class="${m===usageMetric?"on":""}">${m[0].toUpperCase()+m.slice(1)}</button>`).join("")}</div>
     </div></div>
@@ -389,6 +446,18 @@ function mountUsage(){
     areaChart($("#chUsage"), pts, { label: usageMetric, color: usageMetric==="credits" ? "#f5a623" : "#0070f3" });
   };
   draw();
+  const cb = $("#csvBtn"); if (cb) cb.onclick = async ()=>{
+    try {
+      const t = await idToken();
+      const r = await fetch("/api/export?days="+(usageRange==="7D"?7:30),
+        { headers: { Authorization: "Bearer "+t } });
+      if (!r.ok) throw new Error("Export failed ("+r.status+")");
+      const blob = await r.blob(), a = document.createElement("a");
+      a.href = URL.createObjectURL(blob); a.download = "mnai-usage.csv"; a.click();
+      setTimeout(()=>URL.revokeObjectURL(a.href), 5000);
+      toast("CSV downloaded");
+    } catch(e){ toast(e.message,"err"); }
+  };
   $$("#uRange button").forEach(b=>b.onclick=()=>{ usageRange=b.dataset.r; $$("#uRange button").forEach(x=>x.classList.toggle("on",x===b)); draw(); });
   $$("#uMetric button").forEach(b=>b.onclick=()=>{ usageMetric=b.dataset.m; $$("#uMetric button").forEach(x=>x.classList.toggle("on",x===b)); draw(); });
   const ks=[...(PROFILE.keys||[])].sort((a,b)=>(b.requests||0)-(a.requests||0));
@@ -424,6 +493,8 @@ function pageSettings(){
   <div class="settings-grid">
     <div class="card"><div class="card-head"><h2>Wallet</h2><button class="btn sm blue" onclick="openBuyCredits()"><span>Buy credits</span></button></div>
       <div class="row-between"><div><div class="t">Balance</div><div class="d">Credits pay for pro models.</div></div><b style="font-size:20px;font-variant-numeric:tabular-nums">${fmtInt(PROFILE.credits||0)}</b></div>
+      <div class="row-between"><div><div class="t">Monthly spend cap</div><div class="d">Stop credit models after this many credits/month. Empty = unlimited.</div></div>
+        <div style="display:flex;gap:8px"><input type="number" id="spendCapInput" placeholder="Unlimited" min="1" value="${PROFILE.spendCap||""}" style="width:110px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-size:13px;padding:8px 12px;outline:none"><button class="btn sm" id="spendCapBtn">Save</button></div></div>
       <div class="row-between"><div><div class="t">Redeem voucher</div><div class="d">Have a code? Get free credits.</div></div>
         <div style="display:flex;gap:8px"><input type="text" id="voucherInput" placeholder="Enter code" style="width:130px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-size:13px;padding:8px 12px;outline:none;font-family:var(--mono)"><button class="btn sm" id="voucherBtn">Redeem</button></div></div>
       ${ledger.map(e=>`<div class="ledger-row"><div>${esc(e.reason||"")}<small>${new Date(e.ts).toLocaleString()}</small></div><span class="${e.delta>=0?"pos":"neg"}">${e.delta>=0?"+":""}${e.delta}</span></div>`).join("") || '<p style="color:var(--text-3);font-size:13px">No transactions yet.</p>'}
@@ -454,6 +525,12 @@ function mountSettings(){
     } catch(e){ toast(e.message, "err"); $("#voucherBtn").disabled = false; }
   };
   $("#voucherBtn").onclick = doRedeem;
+  $("#spendCapBtn").onclick = async ()=>{
+    $("#spendCapBtn").disabled = true;
+    try { await api("/api/credits",{method:"PUT",body:{spendCap:$("#spendCapInput").value||null}});
+      toast("Spend cap updated"); await refreshAll(); }
+    catch(e){ toast(e.message,"err"); $("#spendCapBtn").disabled = false; }
+  };
   $("#voucherInput").addEventListener("keydown", e=>{ if(e.key==="Enter") doRedeem(); });
 }
 function setTheme(t){ THEME=t; localStorage.setItem("dashmnai.theme",t); applyTheme(); }
@@ -463,146 +540,209 @@ function applyTheme(){
   document.documentElement.dataset.theme=t;
 }
 
-/* ---------- playground (full page) ---------- */
-const PG_HIST = {};   // slug -> [{role, content}]
-let PG_SLUG = "mnai6";
-
-function openPlayground(m){
-  // "Try" entry point: credit check, then go to the playground page
-  if (!m.free && (PROFILE.credits || 0) < 1) {
-    toast("This model needs credits — grab some first.", "err");
-    openBuyCredits();
-    return;
-  }
-  location.hash = "#/playground?model=" + m.slug;
-}
-function pgModel(){ return modelBySlug(PG_SLUG); }
-
+/* ---------- playground (full page, pro) ---------- */
+let PG = { slug: "mnai6", cmp: null, temp: 0.7, maxTok: 1024, sys: "",
+           hist: {}, abort: null, busy: false };
+function pgHist(slug){ return PG.hist[slug] || (PG.hist[slug] = []); }
+function pgOpts(){ return { temperature: PG.temp, max_tokens: PG.maxTok }; }
 function pagePlayground(){
-  const free = CATALOG.filter(m => m.free), pro = CATALOG.filter(m => !m.free);
-  const opt = m => `<option value="${m.slug}" ${m.slug===PG_SLUG?"selected":""}>${esc(m.label)}${m.free?" — free":" — "+m.rate+" cr/1K"}</option>`;
+  const q = new URLSearchParams((location.hash.split("?")[1]||""));
+  const fromQ = q.get("model");
+  if (fromQ && CATALOG.some(m=>m.slug===fromQ)) PG.slug = fromQ;
+  const def = CATALOG.find(m=>m.slug===PG.slug) || CATALOG[0];
+  const cmpDef = PG.cmp ? CATALOG.find(m=>m.slug===PG.cmp) : null;
+  const opt = (sel)=>CATALOG.map(m=>`<option value="${m.slug}"${m.slug===sel?" selected":""}>${esc(m.label)}${m.free?"":" · "+m.rate+"cr"}</option>`).join("");
   return `
-  <div class="page-head"><div><h1>Playground</h1><p>Chat with any model directly. Free models cost nothing.</p></div>
-    <div class="page-actions"><button class="btn" onclick="openBuyCredits()"><span>Buy credits</span></button></div></div>
-  <div class="card pg-page">
-    <div class="pg-modelbar">
-      <select id="pgModelSel">
-        <optgroup label="Free">${free.map(opt).join("")}</optgroup>
-        <optgroup label="Credit-based">${pro.map(opt).join("")}</optgroup>
-      </select>
-      <span id="pgCost"></span>
+  <div class="page-head"><div><h1>Playground</h1><p>Try every model. Nothing is logged as an API call.</p></div>
+    <div class="page-actions">
+      <button class="chip-btn" id="pgShareBtn" title="Copy a public share link">Share</button>
+      <button class="chip-btn" id="pgSnippetBtn" title="Copy code for this model">Copy as</button>
+      <button class="chip-btn" id="pgRegenBtn" title="Regenerate last answer" style="display:none">Regenerate</button>
+      <button class="chip-btn" id="pgStopBtn" title="Stop generating" style="display:none">Stop</button>
+    </div></div>
+  <div class="pg-toolbar">
+    <select id="pgModel" class="btn sm" style="font-size:13px">${opt(PG.slug)}</select>
+    <label class="fld">Temp <input type="range" id="pgTemp" min="0" max="2" step="0.1" value="${PG.temp}"><span class="val" id="pgTempV">${PG.temp}</span></label>
+    <label class="fld">Max tokens <input type="number" id="pgMax" min="64" max="4096" step="64" value="${PG.maxTok}"></label>
+    <div class="pg-actions">
+      <button class="chip-btn" id="pgSysBtn">System prompt</button>
+      <button class="chip-btn ${PG.cmp?"on":""}" id="pgCmpBtn">Compare</button>
+      <select id="pgCmpSel" class="btn sm" style="font-size:13px;${PG.cmp?"":"display:none"}">${opt(PG.cmp||"mnai7")}</select>
     </div>
-    <div id="pgChat"></div>
-    <div class="pg-composer">
-      <input type="text" id="pgInput" placeholder="Ask anything…" autocomplete="off">
-      <button class="btn primary" id="pgGo"><svg viewBox="0 0 24 24"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4z"/></svg></button>
-    </div>
-  </div>`;
-}
-function pgCostHTML(){
-  const m = pgModel();
-  return m.free ? '<span class="badge green">FREE</span>'
-    : `<span class="badge amber">${m.rate} credits / 1K tokens</span> <span style="color:var(--text-3);font-size:12.5px">balance ${fmtInt(PROFILE.credits||0)}</span>`;
-}
-function pgRenderHist(){
-  const chat = $("#pgChat"); if (!chat) return;
-  const hist = PG_HIST[PG_SLUG] || [];
-  chat.innerHTML = "";
-  if (!hist.length) pgAddMsg("ai", `Hey, I'm ${pgModel().label} — ask me anything.`);
-  hist.forEach(m => pgAddMsg(m.role === "user" ? "user" : "ai", m.content, m.meta));
-}
-function pgAddMsg(role, text, meta){
-  const d = document.createElement("div");
-  d.className = "pg-msg " + role;
-  d.innerHTML = esc(text) + (meta ? `<div class="meta">${esc(meta)}</div>` : "");
-  const chat = $("#pgChat");
-  chat.appendChild(d);
-  chat.scrollTop = chat.scrollHeight;
-  return d;
+  </div>
+  <div id="pgSysRow" class="${PG.sys?"open":""}"><div style="padding:12px 0 4px"><textarea id="pgSys" placeholder="Optional system instruction for this session…">${esc(PG.sys)}</textarea></div></div>
+  <div class="pg-cols ${PG.cmp?"cmp":""}">
+    <div><div class="pg-col-label" style="${PG.cmp?"":"display:none"}">${esc(def?def.label:"")}</div><div id="pgChat" class="pg-chat"></div></div>
+    <div><div class="pg-col-label" style="${PG.cmp?"":"display:none"}">${esc(cmpDef?cmpDef.label:"")}</div><div id="pgChat2"></div></div>
+  </div>
+  <div class="est-line" id="pgEst"></div>
+  <div class="pg-inputbar">
+    <input type="text" id="pgInput" placeholder="Message ${esc(def?def.label:"model")}…  (Enter to send)" autocomplete="off">
+    <button class="btn blue" id="pgSend">Send</button>
+  </div>
+  <div id="pgShareBox"></div>`;
 }
 function mountPlayground(){
-  const q = new URLSearchParams((location.hash.split("?")[1] || ""));
-  const want = q.get("model");
-  if (want && CATALOG.some(m => m.slug === want)) PG_SLUG = want;
-  if (!CATALOG.some(m => m.slug === PG_SLUG)) PG_SLUG = (CATALOG[0] || {}).slug || "mnai6";
-  const sel = $("#pgModelSel");
-  sel.value = PG_SLUG;
-  $("#pgCost").innerHTML = pgCostHTML();
-  pgRenderHist();
-  sel.onchange = () => {
-    const m = modelBySlug(sel.value);
-    if (!m.free && (PROFILE.credits || 0) < 1) {
-      toast("This model needs credits — grab some first.", "err");
-      sel.value = PG_SLUG;
-      openBuyCredits();
-      return;
-    }
-    PG_SLUG = m.slug;
-    $("#pgCost").innerHTML = pgCostHTML();
-    pgRenderHist();
+  pgRenderHist(PG.slug, $("#pgChat"));
+  if (PG.cmp) pgRenderHist(PG.cmp, $("#pgChat2"));
+  $("#pgModel").onchange = e=>{ PG.slug = e.target.value; render(); };
+  $("#pgTemp").oninput = e=>{ PG.temp = +e.target.value; $("#pgTempV").textContent = PG.temp.toFixed(1); };
+  $("#pgMax").onchange = e=>{ PG.maxTok = Math.min(Math.max(+e.target.value||1024,64),4096); };
+  $("#pgSysBtn").onclick = ()=>$("#pgSysRow").classList.toggle("open");
+  $("#pgSys").oninput = e=>{ PG.sys = e.target.value; };
+  $("#pgCmpBtn").onclick = ()=>{
+    PG.cmp = PG.cmp ? null : ($("#pgCmpSel").value === PG.slug ? "mnai7" : $("#pgCmpSel").value);
+    render();
   };
-  $("#pgGo").onclick = pgSendPage;
-  $("#pgInput").addEventListener("keydown", e => { if (e.key === "Enter") pgSendPage(); });
-  setTimeout(() => { const i = $("#pgInput"); if (i) i.focus(); }, 80);
+  $("#pgCmpSel").onchange = e=>{ PG.cmp = e.target.value; render(); };
+  $("#pgShareBtn").onclick = pgShare;
+  $("#pgSnippetBtn").onclick = pgSnippet;
+  $("#pgRegenBtn").onclick = pgRegen;
+  $("#pgStopBtn").onclick = ()=>{ if (PG.abort) PG.abort.abort(); };
+  const inp = $("#pgInput");
+  inp.focus();
+  inp.onkeydown = e=>{ if (e.key === "Enter") pgSend(); };
+  $("#pgSend").onclick = pgSend;
+  let estT = null;
+  inp.oninput = ()=>{ clearTimeout(estT); estT = setTimeout(pgEstimate, 500); };
+  pgEstimate();
 }
-async function pgSendPage(){
-  const inp = $("#pgInput"), text = inp.value.trim();
-  if (!text) return;
-  const m = pgModel();
-  if (!m.free && (PROFILE.credits || 0) < 1) { toast("Not enough credits.", "err"); openBuyCredits(); return; }
-  inp.value = "";
-  const hist = PG_HIST[m.slug] = PG_HIST[m.slug] || [];
-  hist.push({ role: "user", content: text });
-  pgAddMsg("user", text);
-  const typing = pgAddMsg("ai", "");
-  typing.innerHTML = '<span class="typing"><i></i><i></i><i></i></span>';
-  $("#pgGo").disabled = true;
+function pgRenderHist(slug, el){
+  const h = pgHist(slug);
+  el.innerHTML = h.length ? h.map(m=>`<div class="pg-msg ${m.role}">${esc(m.text)}</div>`).join("")
+    : `<div class="pg-empty"><div class="pg-empty-ico">✦</div><p>Ask anything — try "Who is your owner?"</p></div>`;
+  el.scrollTop = el.scrollHeight;
+}
+function pgBubble(el, role){
+  const d = document.createElement("div");
+  d.className = "pg-msg " + role;
+  el.appendChild(d); el.scrollTop = el.scrollHeight;
+  return d;
+}
+async function pgRun(slug, text, el){
+  const hist = pgHist(slug);
+  hist.push({ role: "user", text });
+  const ai = pgBubble(el, "ai");
+  ai.innerHTML = '<span class="pg-think"><span class="spin"></span> thinking…</span>';
+  const msgs = [];
+  if (PG.sys.trim()) msgs.push({ role: "system", content: PG.sys.trim().slice(0,2000) });
+  hist.filter(m=>m.role!=="thinking").forEach(m=>msgs.push({ role: m.role, content: m.text }));
+  const ctrl = new AbortController();
+  PG.abort = ctrl;
+  $("#pgStopBtn").style.display = "";
+  let out = "";
   try {
-    const t = await idToken();
-    const r = await fetch("/api/mnaiapi/" + m.slug, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: "Bearer " + t },
-      body: JSON.stringify({ messages: hist.slice(-12), stream: true, max_tokens: 1024 }),
+    const r = await fetch("/api/mnaiapi/" + slug, {
+      method: "POST", signal: ctrl.signal,
+      headers: { "Content-Type": "application/json", Authorization: "Bearer " + await idToken() },
+      body: JSON.stringify({ messages: msgs, stream: true, ...pgOpts() }),
     });
-    let full = "", meta = "";
     const ct = r.headers.get("content-type") || "";
-    if (!r.ok) {
-      const j = await r.json().catch(() => ({}));
-      throw new Error(j.error || ("Request failed (" + r.status + ")"));
-    }
-    if (ct.includes("text/event-stream")) {
-      // streaming SSE
+    if (ct.includes("application/json")) {
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || ("Request failed (" + r.status + ")"));
+      out = (j.choices && j.choices[0] && j.choices[0].message.content) || "";
+      ai.textContent = out;
+    } else {
+      if (!r.ok) throw new Error("Request failed (" + r.status + ")");
       const reader = r.body.getReader(), decoder = new TextDecoder();
-      let buf = "";
+      let buf = "", started = false;
       for (;;) {
         const { done, value } = await reader.read();
         if (done) break;
         buf += decoder.decode(value, { stream: true });
         const parts = buf.split("\n\n"); buf = parts.pop();
         for (const p of parts) {
-          if (p.includes("[DONE]")) continue;
-          const mm = p.match(/"delta"\s*:\s*\{\s*"content"\s*:\s*"((?:[^"\\]|\\.)*)"/);
-          if (mm) { try { full += JSON.parse('"' + mm[1] + '"'); } catch {} }
+          if (!p.startsWith("data:")) continue;
+          const data = p.slice(5).trim();
+          if (data === "[DONE]") continue;
+          try {
+            const tok = JSON.parse(data).choices[0].delta.content || "";
+            if (tok) { if (!started) { ai.textContent = ""; started = true; } out += tok; ai.textContent = out; el.scrollTop = el.scrollHeight; }
+          } catch (e) {}
         }
-        typing.textContent = full;
-        $("#pgChat").scrollTop = $("#pgChat").scrollHeight;
       }
-    } else {
-      // plain JSON (e.g. instant local answers)
-      const j = await r.json();
-      full = (j.choices && j.choices[0] && j.choices[0].message.content) || "";
-      if (j.usage) meta = `${fmtInt(j.usage.total_tokens)} tokens`;
-      if (j.credits_charged) meta += (meta ? " · " : "") + `-${j.credits_charged} credits`;
+      if (!out) ai.innerHTML = '<span style="color:var(--text-3)">(empty response)</span>';
     }
-    if (!full) throw new Error("Empty response from model.");
-    hist.push({ role: "assistant", content: full, meta });
-    typing.innerHTML = esc(full) + (meta ? `<div class="meta">${esc(meta)}</div>` : "");
-    api("/api/me").then(me => { PROFILE = me; $("#creditsVal").textContent = fmtInt(me.credits || 0); $("#pgCost").innerHTML = pgCostHTML(); }).catch(() => {});
+    hist.push({ role: "assistant", text: out });
+    refreshAll().catch(()=>{});
   } catch (e) {
-    typing.innerHTML = esc("Error: " + e.message);
-    if (/credit/i.test(e.message)) setTimeout(openBuyCredits, 700);
+    if (e.name === "AbortError") { ai.innerHTML = esc(out) + ' <span style="color:var(--text-3)">(stopped)</span>'; hist.push({ role: "assistant", text: out }); }
+    else { ai.innerHTML = `<span style="color:var(--red)">Error: ${esc(e.message)}</span>`; }
+  } finally {
+    if (PG.abort === ctrl) PG.abort = null;
+    $("#pgStopBtn").style.display = "none";
+    $("#pgRegenBtn").style.display = "";
   }
-  $("#pgGo").disabled = false;
+}
+async function pgSend(){
+  const text = $("#pgInput").value.trim();
+  if (!text || PG.busy) return;
+  PG.busy = true;
+  $("#pgInput").value = "";
+  pgRenderHist(PG.slug, $("#pgChat"));
+  const jobs = [pgRun(PG.slug, text, $("#pgChat"))];
+  if (PG.cmp) { pgRenderHist(PG.cmp, $("#pgChat2")); jobs.push(pgRun(PG.cmp, text, $("#pgChat2"))); }
+  await Promise.all(jobs);
+  PG.busy = false;
+}
+function pgRegen(){
+  const hist = pgHist(PG.slug);
+  const lastUser = [...hist].reverse().find(m=>m.role==="user");
+  if (!lastUser || PG.busy) return;
+  hist.pop(); // remove last assistant
+  const idx = hist.lastIndexOf(lastUser); if (idx >= 0) hist.splice(idx, 1);
+  pgRenderHist(PG.slug, $("#pgChat"));
+  (async ()=>{ PG.busy = true; await pgRun(PG.slug, lastUser.text, $("#pgChat")); PG.busy = false; })();
+}
+async function pgShare(){
+  const hist = pgHist(PG.slug);
+  const clean = hist.filter(m=>m.role==="user"||m.role==="assistant").map(m=>({role:m.role==="user"?"user":"assistant", content:m.text}));
+  if (!clean.length) { toast("Nothing to share yet.", "err"); return; }
+  try {
+    const r = await api("/api/share", { method: "POST", body: { model: PG.slug, messages: clean } });
+    $("#pgShareBox").innerHTML = `<div class="share-box" style="margin:0 18px 14px"><code>${esc(r.url)}</code>
+      <button class="btn sm blue" id="pgCopyShare">Copy</button></div>`;
+    $("#pgCopyShare").onclick = ()=>{ navigator.clipboard.writeText(r.url).then(()=>toast("Share link copied")); };
+    toast("Share link created");
+  } catch(e){ toast(e.message, "err"); }
+}
+function pgSnippet(){
+  const def = CATALOG.find(m=>m.slug===PG.slug);
+  const lastUser = [...pgHist(PG.slug)].reverse().find(m=>m.role==="user");
+  const msg = (lastUser ? lastUser.text : "Hello!").replace(/"/g, '\"').slice(0,200);
+  const curl = `curl -X POST https://dash-mnaii.vercel.app/api/mnaiapi/${PG.slug} \\n  -H "Authorization: Bearer YOUR_KEY" \\n  -H "Content-Type: application/json" \\n  -d '{"messages":[{"role":"user","content":"${msg}"}]}'`;
+  const py = `from openai import OpenAI
+
+client = OpenAI(base_url="https://dash-mnaii.vercel.app/api/v1", api_key="YOUR_KEY")
+r = client.chat.completions.create(model="${PG.slug}", messages=[{"role": "user", "content": "${msg}"}])
+print(r.choices[0].message.content)`;
+  const js = `const r = await fetch("https://dash-mnaii.vercel.app/api/mnaiapi/${PG.slug}", {
+  method: "POST",
+  headers: { "Content-Type": "application/json", Authorization: "Bearer YOUR_KEY" },
+  body: JSON.stringify({ messages: [{ role: "user", content: "${msg}" }] } }),
+});
+const j = await r.json();
+console.log(j.choices[0].message.content);`;
+  openModal(`<div class="modal-head"><div><h2>Call ${esc(def?def.label:PG.slug)} from code</h2><p>Pick a language and paste.</p></div><button class="modal-x" onclick="closeModal()">×</button></div>
+  <div class="modal-body">
+    <div class="field"><label>cURL</label><pre class="api-hint"><code>${esc(curl)}</code><button class="copy-btn" data-copy="${esc(curl)}"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 012-2h10"/></svg></button></pre></div>
+    <div class="field"><label>Python</label><pre class="api-hint"><code>${esc(py)}</code><button class="copy-btn" data-copy="${esc(py)}"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 012-2h10"/></svg></button></pre></div>
+    <div class="field"><label>JavaScript</label><pre class="api-hint"><code>${esc(js)}</code><button class="copy-btn" data-copy="${esc(js)}"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 012-2h10"/></svg></button></pre></div>
+  </div>
+  <div class="modal-foot"><button class="btn primary" onclick="closeModal()">Done</button></div>`);
+  bindCopy($("#modal"));
+}
+async function pgEstimate(){
+  const el = $("#pgEst"); if (!el) return;
+  const text = $("#pgInput") ? $("#pgInput").value.trim() : "";
+  if (!text) { el.textContent = ""; return; }
+  try {
+    const r = await fetch("/api/estimate", { method: "POST", headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({ model: PG.slug, messages: [{role:"user",content:text}], max_tokens: PG.maxTok }) }).then(r=>r.json());
+    el.textContent = r.free ? `~${fmtInt(r.estimated_tokens)} tokens · free`
+      : `~${fmtInt(r.estimated_tokens)} tokens · ~${r.estimated_credits} credit${r.estimated_credits===1?"":"s"}`;
+  } catch(e){}
 }
 
 /* ---------- buy credits ---------- */
@@ -682,16 +822,26 @@ const ROUTES = {
   overview: { page: pageOverview, mount: mountOverview, title: "Overview" },
   models:   { page: pageModels,   mount: mountModels,   title: "Models" },
   playground: { page: pagePlayground, mount: mountPlayground, title: "Playground" },
+  webhooks: { page: pageWebhooks, mount: mountWebhooks, title: "Webhooks" },
+  integrations: { page: pageIntegrations, mount: mountIntegrations, title: "Integrations" },
+  docs: { page: pageDocs, mount: mountDocs, title: "Docs" },
   keys:     { page: pageKeys,     mount: mountKeys,     title: "API Keys" },
   usage:    { page: pageUsage,    mount: mountUsage,    title: "Usage" },
   logs:     { page: pageLogs,     mount: mountLogs,     title: "Logs" },
   settings: { page: pageSettings, mount: mountSettings, title: "Settings" },
 };
 function currentRoute(){
-  const r = (location.hash || "#/overview").replace("#/","").split("?")[0];
+  const h = (location.hash || "#/overview").replace("#/","");
+  if (h.startsWith("share/")) return "share";
+  const r = h.split("?")[0];
   return ROUTES[r] ? r : "overview";
 }
+function shareId(){
+  const h = (location.hash || "").replace("#/","");
+  return h.startsWith("share/") ? h.slice(6).split("?")[0] : null;
+}
 function render(){
+  if (currentRoute() === "share") { renderShare(); return; }
   if (!USER) return;
   const r = currentRoute(), route = ROUTES[r];
   $$("#nav a").forEach(a=>a.classList.toggle("active", a.dataset.route===r));
@@ -724,10 +874,13 @@ document.addEventListener("keydown", e=>{
     return;
   }
   if (e.key==="Escape"){ closeModal(); }
-  if (mod && ["1","2","3","4","5","6","7"].includes(e.key)){
+  const digits = ["1","2","3","4","5","6","7","8","9","0"];
+  if (mod && digits.includes(e.key)){
     e.preventDefault();
-    location.hash = "#/"+["overview","models","playground","keys","usage","logs","settings"][+e.key-1];
+    const pages = ["overview","models","playground","webhooks","integrations","docs","keys","usage","logs","settings"];
+    location.hash = "#/"+pages[digits.indexOf(e.key)];
   }
+  if (e.key === "?" && !/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) openShortcuts();
 });
 
 /* ---------- boot ---------- */
@@ -743,4 +896,285 @@ $("#newKeyBtn").onclick = ()=>{ location.hash="#/keys"; setTimeout(openCreateKey
 $("#themeBtn").onclick = cycleTheme;
 $("#menuBtn").onclick = ()=>document.body.classList.toggle("nav-open");
 $("#creditsPill").onclick = openBuyCredits;
+$("#bellBtn").onclick = (e)=>{ e.stopPropagation();
+  const d = $("#bellDrop"), open = d.classList.contains("hidden");
+  if (open) renderBellDrop();
+  d.classList.toggle("hidden", !open); };
+document.addEventListener("click", (e)=>{ if (!e.target.closest("#bellWrap")) $("#bellDrop").classList.add("hidden"); });
+setInterval(()=>{ if (USER) updateBell(); }, 60000);
 $("#userChip").onclick = ()=>{ location.hash="#/settings"; };
+
+/* ---------- shared chat view (public link) ---------- */
+async function renderShare(){
+  const id = shareId();
+  document.title = "Shared chat · MNAI Console";
+  $$("#nav a").forEach(a=>a.classList.remove("active"));
+  $("#page").innerHTML = `<div class="page-head"><div><h1>Shared chat</h1><p>Shared via MNAI Console.</p></div>
+    <div class="page-actions"><a class="btn primary" href="#/playground"><span>Try the playground</span></a></div></div>
+    <div class="card"><div id="shareBody"><div class="empty"><span class="spin"></span></div></div></div>`;
+  try {
+    const s = await fetch("/api/share?id=" + encodeURIComponent(id)).then(r=>r.json());
+    if (s.error) throw new Error(s.error);
+    $("#shareBody").innerHTML = `<p style="margin-bottom:14px"><span class="badge blue">${esc(s.label||s.model)}</span>
+      <span style="color:var(--text-3);font-size:12px;margin-left:8px">${new Date(s.createdAt).toLocaleString()}</span></p>` +
+      (s.messages||[]).map(m=>`<div class="pg-msg ${m.role==="user"?"user":"ai"}" style="margin-bottom:10px;max-width:100%">${esc(m.content)}</div>`).join("");
+  } catch(e){ $("#shareBody").innerHTML = `<div class="empty"><h3>Share not found</h3><p>${esc(e.message)}</p></div>`; }
+}
+
+/* ---------- webhooks ---------- */
+let HOOKS = [];
+function pageWebhooks(){
+  return `
+  <div class="page-head"><div><h1>Webhooks</h1><p>Get notified when things happen — signed, inspectable deliveries.</p></div>
+    <div class="page-actions"><button class="btn primary" id="newHookBtn"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg><span>New webhook</span></button></div></div>
+  <div id="hookList"><div class="card"><div class="empty"><span class="spin"></span></div></div></div>
+  <div class="card" style="margin-top:16px"><div class="card-head"><h2>How it works</h2></div>
+    <p style="font-size:13px;color:var(--text-2);line-height:1.7">We <span class="mono">POST</span> JSON to your URL on every subscribed event. Each delivery carries
+    <span class="mono">X-MNAI-Signature</span> (<span class="mono">sha256=…</span> HMAC of the raw body with your hook secret) and
+    <span class="mono">X-MNAI-Event</span> so you can verify it's really us. Failed deliveries are logged below each hook.</p></div>`;
+}
+async function mountWebhooks(){
+  $("#newHookBtn").onclick = openNewHook;
+  try {
+    const r = await api("/api/webhooks");
+    HOOKS = r.hooks || [];
+    PROFILE.hookCount = HOOKS.length;
+  } catch(e){ $("#hookList").innerHTML = `<div class="empty"><h3>Couldn't load webhooks</h3><p>${esc(e.message)}</p></div>`; return; }
+  renderHooks();
+}
+function renderHooks(){
+  const el = $("#hookList"); if (!el) return;
+  el.innerHTML = HOOKS.map(h=>`
+    <div class="hook-card">
+      <div class="hook-top">
+        <div><span class="hook-url">${esc(h.url)}</span>
+          <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap">${(h.events||[]).map(e=>`<span class="scope-tag">${esc(e)}</span>`).join("")}</div></div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <span class="badge ${h.active?"green":"red"}">${h.active?"Active":"Paused"}</span>
+          <button class="btn sm" data-test="${h.id}">Send test</button>
+          <button class="btn sm danger" data-delhook="${h.id}">Delete</button>
+        </div>
+      </div>
+      <div style="font-size:12px;color:var(--text-3);margin:8px 0 4px">Recent deliveries</div>
+      ${(h.deliveries||[]).map(d=>`<div class="del-row"><span class="act-dot" style="background:${d.ok?"var(--green)":"var(--red)"}"></span>
+        <span class="mono">${esc(d.event)}</span><span style="color:var(--text-3)">${d.test?"test · ":""}${new Date(d.ts).toLocaleString()}</span>
+        <span class="${d.ok?"status-2xx":"status-4xx"}">${d.status||"err"}</span>
+        ${d.error?`<span style="color:var(--red)">${esc(d.error)}</span>`:""}</div>`).join("")
+        || '<div style="font-size:12.5px;color:var(--text-3)">No deliveries yet.</div>'}
+    </div>`).join("") || `<div class="card"><div class="empty"><h3>No webhooks yet</h3><p>Create one to get event notifications.</p></div></div>`;
+  $$("[data-test]").forEach(b=>b.onclick=async()=>{
+    b.disabled = true;
+    try { const r = await api("/api/webhooks",{method:"POST",body:{test:b.dataset.test}});
+      toast(r.delivered ? `Test delivered (${r.status})` : `Test failed (${r.status||"error"})`, r.delivered?undefined:"err"); }
+    catch(e){ toast(e.message,"err"); }
+    b.disabled = false; mountWebhooks();
+  });
+  $$("[data-delhook]").forEach(b=>b.onclick=async()=>{
+    if (!confirm("Delete this webhook?")) return;
+    await api("/api/webhooks?id="+b.dataset.delhoook,{method:"DELETE"}).catch(e=>toast(e.message,"err"));
+    mountWebhooks();
+  });
+}
+function openNewHook(){
+  const evs = ["request.completed","credit.low","credit.depleted","key.created","key.revoked","voucher.redeemed"];
+  openModal(`
+  <div class="modal-head"><div><h2>New webhook</h2><p>We'll POST signed JSON to your URL.</p></div><button class="modal-x" onclick="closeModal()">×</button></div>
+  <div class="modal-body">
+    <div class="field"><label>Endpoint URL</label><input type="text" id="whUrl" placeholder="https://your-app.com/hooks/mnai"></div>
+    <div class="field"><label>Events</label><div class="ev-checks">
+      ${evs.map(e=>`<label class="check"><input type="checkbox" value="${e}"${e==="request.completed"?" checked":""}> ${e}</label>`).join("")}
+    </div></div>
+  </div>
+  <div class="modal-foot"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn blue" id="whGo">Create webhook</button></div>`);
+  $("#whGo").onclick = async ()=>{
+    const url = $("#whUrl").value.trim();
+    const events = $$("#modal .ev-checks input:checked").map(i=>i.value);
+    $("#whGo").disabled = true;
+    try {
+      const h = await api("/api/webhooks",{method:"POST",body:{url, events}});
+      openModal(`
+      <div class="modal-head"><div><h2>Webhook created</h2><p>Save this secret — it signs every delivery.</p></div><button class="modal-x" onclick="closeModal()">×</button></div>
+      <div class="modal-body"><div class="secret-box">${esc(h.secret)}</div></div>
+      <div class="modal-foot"><button class="btn primary" id="whDone">Done</button></div>`);
+      $("#whDone").onclick = ()=>{ closeModal(); mountWebhooks(); };
+    } catch(e){ toast(e.message,"err"); $("#whGo").disabled = false; }
+  };
+}
+
+/* ---------- integrations ---------- */
+function pageIntegrations(){
+  const mcpCfg = { mcpServers: { "mnai-api": { url: "https://dash-mnaii.vercel.app/api/mcp",
+    headers: { Authorization: "Bearer YOUR_API_KEY" } } } };
+  return `
+  <div class="page-head"><div><h1>Integrations</h1><p>Connect MNAI to the apps you already use.</p></div></div>
+  <div class="int-grid">
+    <div class="int-card"><div class="int-head"><span class="int-ico">💬</span><h3>Slack / Discord alerts</h3></div>
+      <p>Get a message when credits run low. Paste an incoming-webhook URL.</p>
+      <div class="row"><input type="text" id="alertUrl" placeholder="https://hooks.slack.com/…" value="${esc(PROFILE.alertWebhook||"")}"></div>
+      <div class="row"><button class="btn sm blue" id="alertSave">Save</button><button class="btn sm" id="alertTest">Send test</button></div>
+    </div>
+    <div class="int-card"><div class="int-head"><span class="int-ico">🤖</span><h3>Claude Desktop (MCP)</h3></div>
+      <p>Use every MNAI model inside Claude Desktop as tools. Add this to <span class="mono">claude_desktop_config.json</span>:</p>
+      <pre class="api-hint"><code>${esc(JSON.stringify(mcpCfg, null, 2))}</code><button class="copy-btn" data-copy='${esc(JSON.stringify(mcpCfg))}'><svg viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 012-2h10"/></svg></button></pre>
+      <div class="row"><a class="btn sm" href="#/docs"><span>MCP docs →</span></a></div>
+    </div>
+    <div class="int-card"><div class="int-head"><span class="int-ico">⚡</span><h3>Zapier / Make</h3></div>
+      <p>Trigger Zaps and scenarios from MNAI events. Point a "Webhooks by Zapier" trigger at a webhook below.</p>
+      <div class="row"><a class="btn sm" href="#/webhooks"><span>Set up webhooks →</span></a></div>
+    </div>
+    <div class="int-card"><div class="int-head"><span class="int-ico">🐍</span><h3>OpenAI SDKs</h3></div>
+      <p>Point any OpenAI client at MNAI — zero code changes besides the base URL and key.</p>
+      <pre class="api-hint"><code>base_url="https://dash-mnaii.vercel.app/api/v1"</code><button class="copy-btn" data-copy="https://dash-mnaii.vercel.app/api/v1"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 012-2h10"/></svg></button></pre>
+      <div class="row"><a class="btn sm" href="#/docs"><span>SDK examples →</span></a></div>
+    </div>
+    <div class="int-card"><div class="int-head"><span class="int-ico">📦</span><h3>Batch API</h3></div>
+      <p>Run up to 10 chat requests in a single call — perfect for evals and bulk jobs.</p>
+      <div class="row"><a class="btn sm" href="#/docs"><span>Batch docs →</span></a></div>
+    </div>
+    <div class="int-card"><div class="int-head"><span class="int-ico">🔗</span><h3>Share chats</h3></div>
+      <p>Share any playground conversation with a public read-only link.</p>
+      <div class="row"><a class="btn sm" href="#/playground"><span>Open playground →</span></a></div>
+    </div>
+  </div>`;
+}
+function mountIntegrations(){
+  bindCopy($("#page"));
+  $("#alertSave").onclick = async ()=>{
+    try { await api("/api/credits",{method:"PUT",body:{alertWebhook:$("#alertUrl").value.trim()}});
+      toast("Alert webhook saved"); PROFILE.alertWebhook = $("#alertUrl").value.trim(); }
+    catch(e){ toast(e.message,"err"); }
+  };
+  $("#alertTest").onclick = async ()=>{
+    const url = $("#alertUrl").value.trim();
+    if (!url) { toast("Paste a webhook URL first.","err"); return; }
+    try {
+      await api("/api/credits",{method:"PUT",body:{alertWebhook:url, testAlert:true}});
+      toast("Test alert sent — check the channel.");
+    } catch(e){ toast(e.message,"err"); }
+  };
+}
+
+/* ---------- docs ---------- */
+function pageDocs(){
+  const S = (id, title, body) => `<h2 id="${id}">${title}</h2>${body}`;
+  const code = (c) => `<pre class="code"><button class="copy-btn" data-copy="${esc(c)}"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 012-2h10"/></svg></button><code>${esc(c)}</code></pre>`;
+  const curlEx = `curl -X POST https://dash-mnaii.vercel.app/api/mnaiapi/mnai6 \\
+  -H "Authorization: Bearer YOUR_KEY" \\
+  -H "Content-Type: application/json" \\
+  -d '{"messages":[{"role":"user","content":"Hello!"}]}'`;
+  const pyEx = `from openai import OpenAI
+
+client = OpenAI(
+    base_url="https://dash-mnaii.vercel.app/api/v1",
+    api_key="YOUR_KEY",  # mnai-free-sk-… or mnai_sk_…
+)
+r = client.chat.completions.create(
+    model="mnai6",  # or "MNAI 6", "glyph2", …
+    messages=[{"role": "user", "content": "Hello!"}],
+)
+print(r.choices[0].message.content)`;
+  const jsEx = `const r = await fetch("https://dash-mnaii.vercel.app/api/mnaiapi/mnai6", {
+  method: "POST",
+  headers: { "Content-Type": "application/json", Authorization: "Bearer YOUR_KEY" },
+  body: JSON.stringify({ messages: [{ role: "user", content: "Hello!" }], stream: true }),
+});
+// read the SSE stream…`;
+  const mcpCfg = `{
+  "mcpServers": {
+    "mnai-api": {
+      "url": "https://dash-mnaii.vercel.app/api/mcp",
+      "headers": { "Authorization": "Bearer YOUR_API_KEY" }
+    }
+  }
+}`;
+  const modelRows = CATALOG.map(m=>`<tr><td><span class="mono">/api/mnaiapi/${m.slug}</span></td><td>${esc(m.label)}</td><td>${m.free?'<span class="badge green">FREE</span>':`<span class="badge amber">${m.rate} cr/1K</span>`}</td></tr>`).join("");
+  return `
+  <div class="page-head"><div><h1>Docs</h1><p>Everything you need to build on the MNAI API.</p></div></div>
+  <div class="docs-layout">
+    <nav class="docs-nav">
+      <a href="#/docs" data-doc="quickstart">Quickstart</a><a href="#/docs" data-doc="auth">Authentication</a>
+      <a href="#/docs" data-doc="chat">Chat</a><a href="#/docs" data-doc="models">Models</a>
+      <a href="#/docs" data-doc="streaming">Streaming</a><a href="#/docs" data-doc="sdks">SDKs</a>
+      <a href="#/docs" data-doc="webhooks">Webhooks</a><a href="#/docs" data-doc="mcp">MCP</a>
+      <a href="#/docs" data-doc="batch">Batch</a><a href="#/docs" data-doc="errors">Errors</a>
+    </nav>
+    <div class="docs-body">
+      ${S("quickstart","Quickstart",`<p>1. Create a key in <a href="#/keys" style="color:var(--blue)">API Keys</a> — <span class="mono">mnai-free-sk-…</span> for free models, <span class="mono">mnai_sk_…</span> for everything.<br>2. Call the API:<br></p>${code(curlEx)}<p>3. That's it. Every model answers as MNAI, made by MeowSamOP DZN.</p>`)}
+      ${S("auth","Authentication",`<p>Send your key (or Firebase ID token) as a Bearer token — or via the <span class="mono">X-API-Key</span> header. Free keys work on free models only; pro keys spend credits from your wallet on credit models.</p>`)}
+      ${S("chat","Chat",`<p><span class="mono">POST /api/mnaiapi/:model</span> — body <span class="mono">{messages:[{role,content}], max_tokens?, temperature?, top_p?, stream?}</span>. The OpenAI-compatible alias is <span class="mono">POST /api/v1/chat/completions</span> with <span class="mono">{model:"&lt;slug&gt;"}</span>.</p>`)}
+      ${S("models","Models",`<div class="table-wrap"><table><thead><tr><th>Endpoint</th><th>Model</th><th>Price</th></tr></thead><tbody>${modelRows}</tbody></table></div>`)}
+      ${S("streaming","Streaming",`<p>Pass <span class="mono">"stream": true</span> to <span class="mono">/api/mnaiapi/:model</span> for Server-Sent Events, OpenAI-style, ending with <span class="mono">data: [DONE]</span>.</p>${code(jsEx)}`)}
+      ${S("sdks","SDKs",`<p>Python (OpenAI SDK, drop-in):</p>${code(pyEx)}`)}
+      ${S("webhooks","Webhooks",`<p>Create hooks in <a href="#/webhooks" style="color:var(--blue)">Webhooks</a>. We POST signed JSON (<span class="mono">X-MNAI-Signature: sha256=…</span> HMAC with your hook secret). Events: <span class="mono">request.completed</span>, <span class="mono">credit.low</span>, <span class="mono">credit.depleted</span>, <span class="mono">key.created</span>, <span class="mono">key.revoked</span>, <span class="mono">voucher.redeemed</span>.</p>`)}
+      ${S("mcp","MCP",`<p>Point any MCP client at <span class="mono">https://dash-mnaii.vercel.app/api/mcp</span> (JSON-RPC 2.0, Bearer auth). Each model becomes a <span class="mono">chat_with_&lt;slug&gt;</span> tool. Claude Desktop config:</p>${code(mcpCfg)}`)}
+      ${S("batch","Batch",`<p><span class="mono">POST /api/batch</span> with <span class="mono">{requests:[{model, messages}, …]}</span> (max 10). Quotas and credits apply per request.</p>`)}
+      ${S("errors","Errors",`<div class="table-wrap"><table><thead><tr><th>Code</th><th>Meaning</th></tr></thead><tbody>
+        <tr><td class="mono">400</td><td>Bad request (e.g. missing messages, bad voucher).</td></tr>
+        <tr><td class="mono">401</td><td>Missing/invalid key or login.</td></tr>
+        <tr><td class="mono">402</td><td>Insufficient credits or spend cap reached.</td></tr>
+        <tr><td class="mono">403</td><td>Free key on a credit model, or IP not allowlisted.</td></tr>
+        <tr><td class="mono">429</td><td>Quota or rate limit exceeded.</td></tr>
+        <tr><td class="mono">502/503</td><td>Upstream provider issue, or provider key not configured.</td></tr>
+      </tbody></table></div>`)}
+    </div>
+  </div>`;
+}
+function mountDocs(){
+  bindCopy($("#page"));
+  $$("[data-doc]").forEach(a=>a.onclick=(e)=>{ e.preventDefault();
+    const t = document.getElementById(a.dataset.doc); if (t) t.scrollIntoView({behavior:"smooth"}); });
+}
+
+/* ---------- notifications bell ---------- */
+async function updateBell(){
+  try {
+    const n = await api("/api/notifications");
+    PROFILE.notifications = n.notifications; PROFILE.unread = n.unread;
+    $("#bellDot").classList.toggle("hidden", !n.unread);
+  } catch(e){}
+}
+function renderBellDrop(){
+  const list = PROFILE.notifications || [];
+  $("#bellDrop").innerHTML = `<div class="bell-head">Notifications<button id="markRead">Mark all read</button></div>` +
+    (list.length ? list.map(n=>`<div class="bell-item ${n.read?"read":"unread"}"><span class="dot2"></span>
+      <div>${esc(n.text)}<small>${timeAgo(n.ts)}</small></div></div>`).join("")
+      : `<div class="empty"><h3>All caught up</h3></div>`);
+  const mr = $("#markRead");
+  if (mr) mr.onclick = async (e)=>{ e.stopPropagation();
+    await api("/api/notifications",{method:"POST",body:{action:"read"}}).catch(()=>{});
+    PROFILE.notifications = (PROFILE.notifications||[]).map(x=>({...x, read:true}));
+    PROFILE.unread = 0; $("#bellDot").classList.add("hidden"); renderBellDrop(); };
+}
+
+/* ---------- onboarding checklist ---------- */
+function onboardingCard(){
+  if (localStorage.getItem("dashmnai.onboard") === "1") return "";
+  const steps = [
+    { label: "Create an API key", done: (PROFILE.keys||[]).length > 0, go: "#/keys" },
+    { label: "Try a model", done: (PROFILE.recentLogs||[]).length > 0, go: "#/playground" },
+    { label: "Add a webhook", done: (PROFILE.hookCount||0) > 0, go: "#/webhooks" },
+    { label: "Get credits", done: (PROFILE.credits||0) > 0, go: "#/settings" },
+  ];
+  if (steps.every(s=>s.done)) { localStorage.setItem("dashmnai.onboard","1"); return ""; }
+  return `<div class="onboard"><div style="display:flex;justify-content:space-between;align-items:start">
+    <div><h3>Get the most out of MNAI</h3><p>A few quick steps to go live.</p></div>
+    <button class="modal-x" id="obHide">×</button></div>
+    <div class="ob-steps">${steps.map((s,i)=>`<div class="ob-step ${s.done?"done":""}" data-ob="${i}">
+      <span class="ob-num">${s.done?"✓":i+1}</span>${esc(s.label)}</div>`).join("")}</div></div>`;
+}
+function mountOnboarding(){
+  const h = $("#obHide"); if (h) h.onclick = ()=>{ localStorage.setItem("dashmnai.onboard","1"); render(); };
+  $$("[data-ob]").forEach(el=>el.onclick=()=>{
+    const go = ["#/keys","#/playground","#/webhooks","#/settings"][+el.dataset.ob];
+    if (!el.classList.contains("done")) location.hash = go;
+  });
+}
+
+/* ---------- shortcuts ---------- */
+function openShortcuts(){
+  openModal(`<div class="modal-head"><div><h2>Keyboard shortcuts</h2></div><button class="modal-x" onclick="closeModal()">×</button></div>
+  <div class="modal-body">
+    ${[["⌘/Ctrl + K","Command palette"],["⌘/Ctrl + 1…0","Jump to pages"],["?","This help"],["Esc","Close dialogs"],["Enter","Send (in playground)"]]
+      .map(([k,d])=>`<div class="sc-row"><span>${d}</span><kbd>${k}</kbd></div>`).join("")}
+  </div>`);
+}
