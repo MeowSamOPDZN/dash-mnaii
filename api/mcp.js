@@ -9,9 +9,61 @@ const toolName = (slug) => "chat_with_" + slug.replace(/[^a-z0-9]/g, "_");
 
 module.exports = async (req, res) => {
   if (req.method === "OPTIONS") { lib.cors(res); res.status(200).end(); return; }
-  if (req.method !== "POST") return lib.json(res, 405, { error: "Use POST with JSON-RPC 2.0." });
+  if (req.method !== "POST") return lib.json(res, 405, { error: "Use POST." });
   if (!lib.backendReady()) return lib.json(res, 503, { error: "Backend not configured." });
 
+  // via rewrite: /api/batch -> /api/mcp?do=batch — up to 10 chat requests in one call
+  if (req.query.do === "batch") {
+    let a;
+    try { a = await lib.authReq(req); }
+    catch (e) { return lib.json(res, lib.errCode(e), { error: e.message }); }
+    const body = await lib.readBody(req);
+    const list = Array.isArray(body.requests) ? body.requests.slice(0, 10) : [];
+    if (!list.length) return lib.json(res, 400, { error: "Body needs requests: [{model, messages}]. Max 10." });
+    const results = await Promise.all(list.map(async (rq, i) => {
+      try {
+        const slug = String(rq.model || "mnai6").toLowerCase();
+        const r = await chat.runChat(a, slug, rq || {}, req);
+        return { index: i, ok: true, model: r.label, content: r.content,
+          usage: { total_tokens: r.totalTokens }, credits_charged: r.charged };
+      } catch (e) {
+        return { index: i, ok: false, error: e.message || "Failed." };
+      }
+    }));
+    return lib.json(res, 200, { results });
+  }
+
+  // via rewrite: /api/v1/chat/completions -> /api/mcp?do=v1chat — OpenAI-compatible alias
+  if (req.query.do === "v1chat") {
+    let a;
+    try { a = await lib.authReq(req); }
+    catch (e) { return lib.json(res, lib.errCode(e), { error: e.message }); }
+    const body = await lib.readBody(req);
+    const want = String(body.model || "mnai6").toLowerCase();
+    const slug = lib.MODELS[want] ? want
+      : Object.keys(lib.MODELS).find((s) => lib.MODELS[s].label.toLowerCase() === want);
+    if (!slug) return lib.json(res, 404, { error: `Unknown model "${body.model}".`, models: lib.publicCatalog() });
+    if (body.stream)
+      return lib.json(res, 400, { error: "Use POST /api/mnaiapi/:model with stream:true for streaming." });
+    try {
+      const r = await chat.runChat(a, slug, body, req);
+      let credits = null;
+      try { credits = await lib.getCredits(a.uid); } catch (e) {}
+      return lib.json(res, 200, {
+        id: "chatcmpl-" + Date.now().toString(36),
+        object: "chat.completion",
+        created: Math.floor(Date.now() / 1000),
+        model: slug,
+        choices: [{ index: 0, message: { role: "assistant", content: r.content }, finish_reason: "stop" }],
+        usage: { prompt_tokens: r.promptTokens, completion_tokens: r.completionTokens, total_tokens: r.totalTokens },
+        credits_charged: r.charged, credits_balance: credits,
+      });
+    } catch (e) {
+      return lib.json(res, lib.errCode(e), { error: e.message || "AI error." });
+    }
+  }
+
+  // ---- MCP JSON-RPC ----
   const body = await lib.readBody(req);
   const reply = (result) => lib.json(res, 200, { jsonrpc: "2.0", id: body.id == null ? null : body.id, result });
   const fail = (code, message) => lib.json(res, 200, { jsonrpc: "2.0", id: body.id == null ? null : body.id,
