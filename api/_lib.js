@@ -164,6 +164,30 @@ const CREDIT_PACKS = [
   { id: "p1200", credits: 1200, amount: 29900, label: "1,200 credits" },
 ];
 
+/* ---------------- vouchers ---------------- */
+const VOUCHERS = {
+  "GlyphS": 100,
+};
+async function redeemVoucher(uid, code) {
+  const norm = String(code || "").trim();
+  const amount = VOUCHERS[norm];
+  if (!amount) throw { code: 400, message: "Invalid voucher code." };
+  const ref = db().collection("dashUsers").doc(uid);
+  const out = await db().runTransaction(async (t) => {
+    const s = await t.get(ref);
+    const data = s.exists ? s.data() : {};
+    const used = data.redeemedVouchers || [];
+    if (used.includes(norm)) throw { code: 400, message: "This voucher was already redeemed." };
+    const next = (data.credits || 0) + amount;
+    t.set(ref, { credits: next, redeemedVouchers: [...used, norm] }, { merge: true });
+    const lid = ref.collection("ledger").doc().id;
+    t.set(ref.collection("ledger").doc(lid),
+      { ts: Date.now(), delta: amount, balance: next, reason: "voucher", meta: { code: norm } });
+    return next;
+  });
+  return out;
+}
+
 /* ---------------- usage ---------------- */
 function dayKey(ts) {
   const d = new Date(ts);
@@ -219,4 +243,5 @@ module.exports = {
   sha256, genKey, findKey, maskKey,
   ensureUser, getCredits, addCredits, CREDIT_PACKS,
   logUsage, usageSeries, dayKey, adminProbe, errCode,
+  VOUCHERS, redeemVoucher,
 };
