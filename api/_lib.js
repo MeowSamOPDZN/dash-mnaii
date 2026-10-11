@@ -18,10 +18,12 @@ function admin() {
   _admin = adm;
   return adm;
 }
-/* Safe probe: returns null when admin init works, else the error message. */
-function adminProbe() {
-  try { admin(); return null; }
-  catch (e) { return e.message || String(e); }
+/* Safe probe: returns null when admin init + Firestore work, else the failing step + message. */
+async function adminProbe() {
+  try { admin(); }
+  catch (e) { return "init: " + (e.message || String(e)); }
+  try { await db().collection("apiKeys").limit(1).get(); return null; }
+  catch (e) { return "firestore: " + (e.message || String(e)); }
 }
 function db() { return admin().firestore(); }
 function backendReady() { return !!process.env.FIREBASE_SERVICE_ACCOUNT; }
@@ -208,5 +210,5 @@ module.exports = {
   cors, json, readBody, authReq, requireFirebase,
   sha256, genKey, findKey, maskKey,
   ensureUser, getCredits, addCredits, CREDIT_PACKS,
-  logUsage, usageSeries, dayKey,
+  logUsage, usageSeries, dayKey, adminProbe,
 };
