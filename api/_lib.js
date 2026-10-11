@@ -76,6 +76,14 @@ function readBody(req) {
   });
 }
 
+
+/* Sanitize thrown codes: gRPC/Firebase errors carry numeric codes (e.g. 7)
+   that are NOT valid HTTP statuses. Only pass through real 4xx/5xx. */
+function errCode(e) {
+  const c = e && e.code;
+  return (typeof c === "number" && c >= 400 && c < 600) ? c : 500;
+}
+
 /* ---------------- keys ---------------- */
 function sha256(s) { return crypto.createHash("sha256").update(s).digest("hex"); }
 function genKey(kind) {
@@ -210,5 +218,5 @@ module.exports = {
   cors, json, readBody, authReq, requireFirebase,
   sha256, genKey, findKey, maskKey,
   ensureUser, getCredits, addCredits, CREDIT_PACKS,
-  logUsage, usageSeries, dayKey, adminProbe,
+  logUsage, usageSeries, dayKey, adminProbe, errCode,
 };
