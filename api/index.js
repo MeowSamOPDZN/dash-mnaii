@@ -19,6 +19,7 @@ module.exports = async (req, res) => {
       "GET/POST /api/keys": "List / create API keys. (Firebase login)",
       "DELETE /api/keys?id=…": "Revoke a key. (Firebase login)",
       "GET/POST /api/credits": "Balance, packs, and buy credits. (Firebase login)",
+      "POST /api/voucher": "Redeem a voucher code for free credits. Body: {code}. (Firebase login)",
       "POST /api/verify-payment": "Verify a Razorpay payment and credit the wallet.",
     },
     keyTypes: {
