@@ -1,1 +1,1 @@
-{"cleanUrls":true}
+{"cleanUrls":true,"rewrites":[{"destination":"/api/me?do=notifications","source":"/api/notifications"},{"destination":"/api/credits?do=verify","source":"/api/verify-payment"},{"destination":"/api/credits?do=voucher","source":"/api/voucher"},{"destination":"/api/mcp?do=batch","source":"/api/batch"},{"destination":"/api/mcp?do=v1chat","source":"/api/v1/chat/completions"},{"destination":"/api/util?do=estimate","source":"/api/estimate"},{"destination":"/api/util?do=share","source":"/api/share"},{"destination":"/api/util?do=export","source":"/api/export"}]}
