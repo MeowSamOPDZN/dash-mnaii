@@ -28,6 +28,6 @@ module.exports = async (req, res) => {
       ledger: ledgerSnap.docs.map((d) => d.data()),
     });
   } catch (e) {
-    lib.json(res, e.code || 500, { error: e.message || "Server error." });
+    lib.json(res, lib.errCode(e), { error: e.message || "Server error." });
   }
 };
