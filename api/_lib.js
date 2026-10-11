@@ -7,11 +7,21 @@ function admin() {
   if (_admin) return _admin;
   const raw = process.env.FIREBASE_SERVICE_ACCOUNT;
   if (!raw) throw new Error("FIREBASE_SERVICE_ACCOUNT env var is not set");
-  const svc = JSON.parse(raw);
+  let svc;
+  try { svc = JSON.parse(raw); }
+  catch { throw new Error("FIREBASE_SERVICE_ACCOUNT is not valid JSON (paste the whole file content)."); }
+  if (svc.private_key) svc.private_key = svc.private_key.replace(/\\n/g, "\n");
+  if (!svc.project_id || !svc.private_key || !svc.client_email)
+    throw new Error("FIREBASE_SERVICE_ACCOUNT JSON is missing project_id / private_key / client_email.");
   const adm = require("firebase-admin");
   if (!adm.apps.length) adm.initializeApp({ credential: adm.credential.cert(svc) });
   _admin = adm;
   return adm;
+}
+/* Safe probe: returns null when admin init works, else the error message. */
+function adminProbe() {
+  try { admin(); return null; }
+  catch (e) { return e.message || String(e); }
 }
 function db() { return admin().firestore(); }
 function backendReady() { return !!process.env.FIREBASE_SERVICE_ACCOUNT; }
