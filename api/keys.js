@@ -9,7 +9,7 @@ module.exports = async (req, res) => {
   if (!lib.backendReady()) return lib.json(res, 503, { error: "Backend not configured (FIREBASE_SERVICE_ACCOUNT)." });
   let a;
   try { a = await lib.requireFirebase(req); }
-  catch (e) { return lib.json(res, e.code || 500, { error: e.message }); }
+  catch (e) { return lib.json(res, lib.errCode(e), { error: e.message }); }
   const db = lib.db();
 
   if (req.method === "GET") {
