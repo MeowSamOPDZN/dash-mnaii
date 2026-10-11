@@ -131,7 +131,7 @@ module.exports = async (req, res) => {
 
   let a;
   try { a = await lib.authReq(req); }
-  catch (e) { return lib.json(res, e.code || 500, { error: e.message }); }
+  catch (e) { return lib.json(res, lib.errCode(e), { error: e.message }); }
 
   // free keys can only touch free models
   if (!def.free && a.via === "apikey" && a.key.kind === "free")
@@ -191,7 +191,7 @@ module.exports = async (req, res) => {
       }
     }
   } catch (e) {
-    status = e.code || 500;
+    status = lib.errCode(e);
     await lib.logUsage(a.uid, { ts: Date.now(), model: slug, tokens: 0, ms: Date.now() - t0,
       status, credits: 0, keyId: a.key ? a.key.id : null }).catch(() => {});
     return lib.json(res, status, { error: e.message || "AI error.", credits: e.credits, detail: e.detail });
