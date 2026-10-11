@@ -150,6 +150,82 @@ async function requireFirebase(req) {
   return a;
 }
 
+
+/* ---------------- webhooks ---------------- */
+const WEBHOOK_EVENTS = [
+  "request.completed", "credit.low", "credit.depleted",
+  "key.created", "key.revoked", "voucher.redeemed",
+];
+async function fireEvent(uid, event, data) {
+  if (!WEBHOOK_EVENTS.includes(event)) return;
+  try {
+    const snap = await db().collection("webhooks").where("uid", "==", uid).get();
+    for (const doc of snap.docs) {
+      const h = doc.data();
+      if (h.active === false) continue;
+      if (!(h.events || []).includes(event)) continue;
+      await deliverWebhook(doc.id, h, { event, ts: Date.now(), data: data || {} });
+    }
+  } catch (e) { /* webhooks never break the main flow */ }
+}
+async function deliverWebhook(hookId, h, payload, isTest) {
+  const body = JSON.stringify(payload);
+  const sig = "sha256=" + crypto.createHmac("sha256", h.secret || "").update(body).digest("hex");
+  let ok = false, status = 0, err = "";
+  try {
+    const ctl = new AbortController();
+    const to = setTimeout(() => ctl.abort(), 8000);
+    const r = await fetch(h.url, {
+      method: "POST", signal: ctl.signal,
+      headers: { "Content-Type": "application/json",
+        "X-MNAI-Signature": sig, "X-MNAI-Event": payload.event,
+        "X-MNAI-Test": isTest ? "true" : "false" },
+      body,
+    });
+    clearTimeout(to);
+    ok = r.ok; status = r.status;
+  } catch (e) { err = String((e && e.message) || e).slice(0, 140); }
+  try {
+    const col = db().collection("webhooks").doc(hookId).collection("deliveries");
+    await col.add({ ts: Date.now(), event: payload.event, ok, status, error: err, test: !!isTest });
+    const old = await col.orderBy("ts", "desc").offset(20).get();
+    const batch = db().batch();
+    old.docs.forEach((d) => batch.delete(d.ref));
+    await batch.commit();
+  } catch (e) {}
+  return { ok, status, error: err };
+}
+
+/* ---------------- notifications (in-app bell) ---------------- */
+async function notify(uid, text, kind) {
+  try {
+    const ref = db().collection("dashUsers").doc(uid);
+    await db().runTransaction(async (t) => {
+      const s = await t.get(ref);
+      const n = (s.exists && s.data().notifications) || [];
+      n.unshift({ ts: Date.now(), text: String(text).slice(0, 200), kind: kind || "info", read: false });
+      t.set(ref, { notifications: n.slice(0, 20) }, { merge: true });
+    });
+  } catch (e) {}
+}
+/* Low-credit alert: in-app + webhook + optional Slack/Discord URL. Once per day. */
+async function maybeLowCreditAlert(uid, balance) {
+  if (balance >= 20) return;
+  try {
+    const ref = db().collection("dashUsers").doc(uid);
+    const s = await ref.get();
+    const last = (s.exists && s.data().lastLowAlert) || 0;
+    if (Date.now() - last < 864e5) return;
+    await ref.set({ lastLowAlert: Date.now() }, { merge: true });
+    const text = `Credits running low — balance is ${balance}. Top up to keep pro models working.`;
+    await notify(uid, text, "warn");
+    await fireEvent(uid, balance <= 0 ? "credit.depleted" : "credit.low", { balance });
+    const url = s.exists && s.data().alertWebhook;
+    if (url) fetch(url, { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: `:warning: MNAI API: ${text}` }) }).catch(() => {});
+  } catch (e) {}
+}
+
 /* ---------------- users / credits ---------------- */
 async function ensureUser(uid, email, name) {
   const ref = db().collection("dashUsers").doc(uid);
@@ -266,4 +342,5 @@ module.exports = {
   ensureUser, getCredits, addCredits, CREDIT_PACKS,
   logUsage, usageSeries, dayKey, adminProbe, errCode,
   VOUCHERS, redeemVoucher, serviceAccountProject, tokenProject,
+  WEBHOOK_EVENTS, fireEvent, deliverWebhook, notify, maybeLowCreditAlert,
 };
