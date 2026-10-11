@@ -47,6 +47,35 @@ module.exports = async (req, res) => {
     });
   }
 
+  if (req.method === "PUT") {
+    // update settings: { spendCap } or { alertWebhook }
+    const body = await lib.readBody(req);
+    const up = {};
+    if (body.spendCap !== undefined) {
+      const n = parseInt(body.spendCap, 10);
+      up.spendCap = n > 0 ? n : null;
+    }
+    if (body.alertWebhook !== undefined) {
+      const u = String(body.alertWebhook || "").trim().slice(0, 300);
+      if (u && !/^https:\/\/.+/.test(u)) return lib.json(res, 400, { error: "Webhook URL must start with https://" });
+      up.alertWebhook = u;
+    }
+    if (!Object.keys(up).length && !body.testAlert) return lib.json(res, 400, { error: "Nothing to update." });
+    if (Object.keys(up).length) await lib.db().collection("dashUsers").doc(a.uid).set(up, { merge: true });
+    if (body.testAlert) {
+      const url = up.alertWebhook !== undefined ? up.alertWebhook
+        : ((await lib.db().collection("dashUsers").doc(a.uid).get()).data() || {}).alertWebhook;
+      if (!url) return lib.json(res, 400, { error: "Save an alert webhook URL first." });
+      try {
+        await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: ":white_check_mark: MNAI API: test alert — your integration works!" }) });
+      } catch (e) { return lib.json(res, 502, { error: "Could not reach that URL: " + String(e.message || e).slice(0, 120) }); }
+      return lib.json(res, 200, { sent: true });
+    }
+    const credits = await lib.getCredits(a.uid);
+    return lib.json(res, 200, { updated: true, credits });
+  }
+
   if (req.method === "POST") {
     const keyId = process.env.RAZORPAY_KEY_ID, keySecret = process.env.RAZORPAY_KEY_SECRET;
     if (!keyId || !keySecret)
