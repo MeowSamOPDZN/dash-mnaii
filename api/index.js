@@ -3,10 +3,13 @@ const { json, publicCatalog, backendReady } = require("./_lib");
 
 module.exports = async (req, res) => {
   if (req.method === "OPTIONS") { require("./_lib").cors(res); res.status(200).end(); return; }
+  const lib = require("./_lib");
+  const probeErr = lib.backendReady() ? lib.adminProbe() : "FIREBASE_SERVICE_ACCOUNT is not set";
   json(res, 200, {
     name: "MNAI API",
     by: "MeowSamOP DZN",
-    backend: backendReady() ? "connected" : "not-configured",
+    backend: probeErr ? "error" : "connected",
+    backendError: probeErr,
     endpoints: {
       "GET /api/models": "List all models (free vs credit-based).",
       "POST /api/mnaiapi/:model": "Chat with a model. Body: {messages:[{role,content}], stream?}. Auth: Bearer <Firebase ID token | mnai_sk_… | mnai-free-sk-…>.",
