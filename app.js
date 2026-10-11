@@ -55,7 +55,7 @@ function initFirebase(){
     }
   });
 }
-async function idToken(){ return USER ? USER.getIdToken() : null; }
+async function idToken(){ return USER ? USER.getIdToken(true) : null; }
 
 /* ---------- api client ---------- */
 async function api(path, opts){
