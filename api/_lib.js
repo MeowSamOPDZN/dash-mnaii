@@ -103,6 +103,24 @@ async function findKey(secret) {
 }
 function maskKey(prefix, last4) { return prefix + "••••" + last4; }
 
+/* Project IDs: which Firebase project the service account belongs to,
+   and which project a (possibly invalid) ID token was issued for.
+   Used to diagnose "invalid token" with a precise message. */
+function serviceAccountProject() {
+  try {
+    const raw = process.env.FIREBASE_SERVICE_ACCOUNT;
+    if (!raw) return null;
+    return JSON.parse(raw).project_id || null;
+  } catch { return null; }
+}
+function tokenProject(token) {
+  try {
+    const parts = String(token || "").split(".");
+    if (parts.length !== 3) return null;
+    return JSON.parse(Buffer.from(parts[1], "base64").toString()).aud || null;
+  } catch { return null; }
+}
+
 /* ---------------- auth ----------------
    Returns { uid, email, via: "firebase"|"apikey", key } or throws {code, message}. */
 async function authReq(req) {
@@ -118,8 +136,12 @@ async function authReq(req) {
   try {
     const decoded = await admin().auth().verifyIdToken(token);
     return { uid: decoded.uid, email: decoded.email || "", via: "firebase", key: null };
-  } catch {
-    throw { code: 401, message: "Invalid or expired login token. Sign in again." };
+  } catch (e) {
+    const tp = tokenProject(token), sp = serviceAccountProject();
+    if (tp && sp && tp !== sp)
+      throw { code: 401, message: `This login is for Firebase project "${tp}", but the server is configured for "${sp}". In Firebase console, switch to project "${tp}" → Project settings → Service accounts → Generate new private key, then replace FIREBASE_SERVICE_ACCOUNT in Vercel and redeploy.` };
+    const why = e && e.code ? ` [${e.code}]` : "";
+    throw { code: 401, message: "Invalid or expired login token. Sign in again." + why };
   }
 }
 async function requireFirebase(req) {
@@ -243,5 +265,5 @@ module.exports = {
   sha256, genKey, findKey, maskKey,
   ensureUser, getCredits, addCredits, CREDIT_PACKS,
   logUsage, usageSeries, dayKey, adminProbe, errCode,
-  VOUCHERS, redeemVoucher,
+  VOUCHERS, redeemVoucher, serviceAccountProject, tokenProject,
 };
