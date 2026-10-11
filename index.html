@@ -4,32 +4,34 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>MNAI Dashboard</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23000'/%3E%3Cpath d='M9 22V10l7 8 7-8v12' stroke='white' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<link rel="icon" href="logo.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=1">
+<link rel="stylesheet" href="styles.css?v=2">
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
+<script src="https://checkout.razorpay.com/v1/checkout.js"></script>
 </head>
 <body>
 <div id="app">
   <!-- Sidebar -->
   <aside id="sidebar">
     <a class="brand" href="#/overview">
-      <span class="brand-mark" aria-hidden="true">
-        <svg viewBox="0 0 32 32"><rect width="32" height="32" rx="7" fill="currentColor"/><path d="M9 22V10l7 8 7-8v12" stroke="#000" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round" class="mark-stroke"/></svg>
-      </span>
-      <span class="brand-text">MNAI <em>Console</em></span>
+      <img class="brand-logo" src="logo.png" alt="MNAI">
+      <span class="brand-text"><em>Console</em></span>
     </a>
     <nav id="nav">
       <a href="#/overview" data-route="overview"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>Overview</a>
       <a href="#/keys" data-route="keys"><svg viewBox="0 0 24 24"><circle cx="8" cy="15" r="4"/><path d="M11 12l9-9m-4 4l3 3m-6 0l2 2"/></svg>API Keys</a>
+      <a href="#/models" data-route="models"><svg viewBox="0 0 24 24"><path d="M12 2l8 4.5v9L12 20l-8-4.5v-9z"/><path d="M12 11L4 6.5M12 11l8-4.5M12 11v9"/></svg>Models</a>
       <a href="#/usage" data-route="usage"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15l4-5 3 3 5-7"/></svg>Usage</a>
       <a href="#/logs" data-route="logs"><svg viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13"/><circle cx="4" cy="6" r="1"/><circle cx="4" cy="12" r="1"/><circle cx="4" cy="18" r="1"/></svg>Logs</a>
       <a href="#/settings" data-route="settings"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.9l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.9-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.2a1.7 1.7 0 00-1-1.5 1.7 1.7 0 00-1.9.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.9 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.2a1.7 1.7 0 001.5-1 1.7 1.7 0 00-.3-1.9l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.9.3h0a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.2a1.7 1.7 0 001 1.5h0a1.7 1.7 0 001.9-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.9v0a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.2a1.7 1.7 0 00-1.5 1z"/></svg>Settings</a>
     </nav>
     <div class="sidebar-foot">
-      <div class="env-pill"><span class="dot live"></span>Demo environment</div>
-      <div class="sidebar-user"><span class="avatar">S</span><div><b>Sam</b><span>Owner</span></div></div>
+      <div class="env-pill"><span class="dot live"></span><span id="envLabel">MNAI API · live</span></div>
+      <div class="sidebar-user"><span class="avatar" id="sideAvatar">?</span><div><b id="sideName">…</b><span id="sideEmail">…</span></div></div>
     </div>
   </aside>
 
@@ -42,7 +44,9 @@
         <span>Search or command…</span><kbd>⌘K</kbd>
       </button>
       <div class="topbar-right">
+        <button id="creditsPill" class="credits-pill" title="Buy credits"><svg viewBox="0 0 24 24"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg><b id="creditsVal">–</b><span>credits</span></button>
         <button id="themeBtn" class="icon-btn" aria-label="Toggle theme"><svg viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1111.2 3 7 7 0 0021 12.8z"/></svg></button>
+        <button id="userChip" class="user-chip"><span class="avatar" id="userAvatar">?</span></button>
         <button id="newKeyBtn" class="btn primary"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg><span>Create key</span></button>
       </div>
     </header>
@@ -64,6 +68,38 @@
 <!-- Toasts -->
 <div id="toasts"></div>
 
-<script src="app.js?v=1"></script>
+<!-- Login gate -->
+<div id="loginOverlay">
+  <div class="login-card">
+    <img class="login-logo" src="logo.png" alt="MNAI">
+    <h1>MNAI Console</h1>
+    <p>Sign in to manage API keys, usage and credits.</p>
+    <button id="googleBtn" class="btn google"><svg viewBox="0 0 24 24"><path fill="#4285F4" d="M22.6 12.3c0-.8-.1-1.5-.2-2.3H12v4.5h6c-.3 1.4-1.1 2.6-2.3 3.4v2.8h3.7c2.2-2 3.2-4.9 3.2-8.4z"/><path fill="#34A853" d="M12 23c3.1 0 5.7-1 7.6-2.8l-3.7-2.8c-1 .7-2.4 1.1-3.9 1.1-3 0-5.5-2-6.4-4.7H1.8v2.9C3.7 20.5 7.6 23 12 23z"/><path fill="#FBBC05" d="M5.6 14.8c-.2-.7-.4-1.5-.4-2.8s.1-2.1.4-2.8V6.3H1.8C.7 8.5 0 10.2 0 12s.7 3.5 1.8 5.7l3.8-2.9z"/><path fill="#EA4335" d="M12 5.5c1.7 0 3.2.6 4.4 1.7l3.3-3.3C17.7 2 14.9 1 12 1 7.6 1 3.7 3.5 1.8 6.3l3.8 2.9c.9-2.7 3.4-3.7 6.4-3.7z"/></svg>Continue with Google</button>
+    <div class="login-div"><span>or</span></div>
+    <div class="field"><input type="email" id="loginEmail" placeholder="Email" autocomplete="email"></div>
+    <div class="field"><input type="password" id="loginPass" placeholder="Password" autocomplete="current-password"></div>
+    <div id="loginErr" class="login-err"></div>
+    <button id="emailSignIn" class="btn primary block">Sign in</button>
+    <button id="emailSignUp" class="btn block">Create account</button>
+    <p class="login-note">Demo API · keys start with <span class="mono">mnai-free-sk-</span> / <span class="mono">mnai_sk_</span></p>
+  </div>
+</div>
+
+<!-- Playground drawer -->
+<div id="pgOverlay" class="overlay hidden">
+  <div id="playground" role="dialog" aria-label="Model playground">
+    <div class="pg-head">
+      <div><h2 id="pgTitle">Model</h2><p id="pgSub"></p></div>
+      <button class="modal-x" id="pgClose">×</button>
+    </div>
+    <div id="pgMsgs"></div>
+    <div class="pg-input">
+      <input type="text" id="pgText" placeholder="Ask anything…" autocomplete="off">
+      <button class="btn primary" id="pgSend"><svg viewBox="0 0 24 24"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4z"/></svg></button>
+    </div>
+  </div>
+</div>
+
+<script src="app.js?v=2"></script>
 </body>
 </html>
