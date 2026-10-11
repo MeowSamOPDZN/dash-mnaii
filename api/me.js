@@ -16,16 +16,22 @@ module.exports = async (req, res) => {
       const k = d.data();
       return { id: d.id, name: k.name, kind: k.kind, masked: lib.maskKey(k.prefix, k.last4),
         createdAt: k.createdAt, lastUsedAt: k.lastUsedAt || 0, revoked: !!k.revoked,
-        requests: k.requests || 0, tokens: k.tokens || 0, creditsUsed: k.creditsUsed || 0 };
+        requests: k.requests || 0, tokens: k.tokens || 0, creditsUsed: k.creditsUsed || 0,
+        quotaMonthly: k.quotaMonthly || null, ratePerMin: k.ratePerMin || null,
+        ipAllowlist: k.ipAllowlist || "" };
     });
     const series = await lib.usageSeries(a.uid, 30);
     const ledgerSnap = await uref.collection("ledger").orderBy("ts", "desc").limit(20).get().catch(() => ({ docs: [] }));
     lib.json(res, 200, {
       uid: a.uid, email: a.email,
       credits: u.credits || 0,
+      spendCap: u.spendCap || null,
+      alertWebhook: u.alertWebhook || "",
       keys, usage30d: series,
       recentLogs: u.recentLogs || [],
       ledger: ledgerSnap.docs.map((d) => d.data()),
+      notifications: u.notifications || [],
+      unread: (u.notifications || []).filter((x) => !x.read).length,
     });
   } catch (e) {
     lib.json(res, lib.errCode(e), { error: e.message || "Server error." });
