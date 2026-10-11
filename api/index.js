@@ -4,7 +4,9 @@ const { json, publicCatalog, backendReady } = require("./_lib");
 module.exports = async (req, res) => {
   if (req.method === "OPTIONS") { require("./_lib").cors(res); res.status(200).end(); return; }
   const lib = require("./_lib");
-  const probeErr = lib.backendReady() ? lib.adminProbe() : "FIREBASE_SERVICE_ACCOUNT is not set";
+  let probeErr = null;
+  try { probeErr = lib.backendReady() ? await lib.adminProbe() : "FIREBASE_SERVICE_ACCOUNT is not set"; }
+  catch (e) { probeErr = "probe-crash: " + (e.message || String(e)); }
   json(res, 200, {
     name: "MNAI API",
     by: "MeowSamOP DZN",
