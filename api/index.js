@@ -12,6 +12,7 @@ module.exports = async (req, res) => {
     by: "MeowSamOP DZN",
     backend: probeErr ? "error" : "connected",
     backendError: probeErr,
+    serviceAccountProject: lib.serviceAccountProject(),
     endpoints: {
       "GET /api/models": "List all models (free vs credit-based).",
       "POST /api/mnaiapi/:model": "Chat with a model. Body: {messages:[{role,content}], stream?}. Auth: Bearer <Firebase ID token | mnai_sk_… | mnai-free-sk-…>.",
