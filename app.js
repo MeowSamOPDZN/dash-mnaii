@@ -424,6 +424,8 @@ function pageSettings(){
   <div class="settings-grid">
     <div class="card"><div class="card-head"><h2>Wallet</h2><button class="btn sm blue" onclick="openBuyCredits()"><span>Buy credits</span></button></div>
       <div class="row-between"><div><div class="t">Balance</div><div class="d">Credits pay for pro models.</div></div><b style="font-size:20px;font-variant-numeric:tabular-nums">${fmtInt(PROFILE.credits||0)}</b></div>
+      <div class="row-between"><div><div class="t">Redeem voucher</div><div class="d">Have a code? Get free credits.</div></div>
+        <div style="display:flex;gap:8px"><input type="text" id="voucherInput" placeholder="Enter code" style="width:130px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-size:13px;padding:8px 12px;outline:none;font-family:var(--mono)"><button class="btn sm" id="voucherBtn">Redeem</button></div></div>
       ${ledger.map(e=>`<div class="ledger-row"><div>${esc(e.reason||"")}<small>${new Date(e.ts).toLocaleString()}</small></div><span class="${e.delta>=0?"pos":"neg"}">${e.delta>=0?"+":""}${e.delta}</span></div>`).join("") || '<p style="color:var(--text-3);font-size:13px">No transactions yet.</p>'}
     </div>
     <div class="card"><div class="card-head"><h2>Appearance</h2></div>
@@ -435,16 +437,24 @@ function pageSettings(){
       <div class="row-between"><div><div class="t">${esc(USER.displayName||USER.email||"User")}</div><div class="d mono">${esc(USER.email||"")}</div></div></div>
       <div class="row-between"><div><div class="t">Sign out</div><div class="d">End this session.</div></div><button class="btn sm" id="signOutBtn">Sign out</button></div>
     </div>
-    <div class="card"><div class="card-head"><h2>About</h2></div>
-      <div style="font-size:13px;color:var(--text-2);display:flex;flex-direction:column;gap:8px">
-        <div><b style="color:var(--text)">MNAI Console</b> · v2.0</div>
-        <div>API at <span class="mono">dash-mnaii.vercel.app/api</span>. Every model answers as MNAI — made by MeowSamOP DZN.</div>
-      </div></div>
   </div>`;
 }
 function mountSettings(){
   $$("[data-theme-pick]").forEach(el=>el.onclick=()=>{ setTheme(el.dataset.themePick); render(); });
   $("#signOutBtn").onclick=()=>AUTH.signOut();
+  const doRedeem = async ()=>{
+    const code = $("#voucherInput").value.trim();
+    if (!code) { toast("Enter a voucher code.", "err"); return; }
+    $("#voucherBtn").disabled = true;
+    try {
+      const r = await api("/api/voucher", { method: "POST", body: { code } });
+      toast(`Voucher redeemed! +${fmtInt(r.credits - (PROFILE.credits||0))} credits.`);
+      $("#voucherInput").value = "";
+      await refreshAll();
+    } catch(e){ toast(e.message, "err"); $("#voucherBtn").disabled = false; }
+  };
+  $("#voucherBtn").onclick = doRedeem;
+  $("#voucherInput").addEventListener("keydown", e=>{ if(e.key==="Enter") doRedeem(); });
 }
 function setTheme(t){ THEME=t; localStorage.setItem("dashmnai.theme",t); applyTheme(); }
 function cycleTheme(){ setTheme(THEME==="dark"?"light":THEME==="light"?"system":"dark"); render(); }
