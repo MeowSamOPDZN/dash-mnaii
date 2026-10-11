@@ -62,3 +62,5 @@ module.exports = async (req, res) => {
 
   return lib.json(res, 405, { error: "Method not allowed." });
 };
+
+/* deploy-trigger: v3 full */
