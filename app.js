@@ -35,7 +35,7 @@ function copyText(t, msg){
 }
 
 /* ---------- firebase ---------- */
-const FIREBASE_CONFIG = {"apiKey": "AIzaSyAr-tJK6KLjfeZEwZSNbigxzgMM5DWzoxA", "authDomain": "builtfor-you.firebaseapp.com", "projectId": "builtfor-you", "storageBucket": "builtfor-you.firebasestorage.app", "messagingSenderId": "1000525498809", "appId": "1:1000525498809:web:f9f41922d0a200bb928e68", "measurementId": "G-WPCWX6CXJH"};
+const FIREBASE_CONFIG = {"apiKey":"AIzaSyC0xh1F3TUxbaVY0GDZTfEb4H82pxLBMQA","authDomain":"gl1tchbrainai.firebaseapp.com","projectId":"gl1tchbrainai","storageBucket":"gl1tchbrainai.firebasestorage.app","messagingSenderId":"139629266691","appId":"1:139629266691:web:f255525aeb72b3a3378b36","measurementId":"G-1QTLT0G99B"};
 let AUTH = null, USER = null;
 function initFirebase(){
   firebase.initializeApp(FIREBASE_CONFIG);
