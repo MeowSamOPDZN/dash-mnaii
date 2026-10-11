@@ -5,6 +5,7 @@
           Razorpay checkout, then POSTs to /api/verify-payment. */
 const lib = require("./_lib");
 const https = require("https");
+const crypto = require("crypto");
 
 function rzp(path, keyId, keySecret, data) {
   return new Promise((resolve, reject) => {
@@ -32,6 +33,43 @@ module.exports = async (req, res) => {
   try { a = await lib.requireFirebase(req); }
   catch (e) { return lib.json(res, lib.errCode(e), { error: e.message }); }
   await lib.ensureUser(a.uid, a.email, "");
+
+  // via rewrite: /api/verify-payment -> /api/credits?do=verify (POST)
+  if (req.query.do === "verify" && req.method === "POST") {
+    const keySecret = process.env.RAZORPAY_KEY_SECRET;
+    if (!keySecret) return lib.json(res, 501, { error: "Payments are not configured yet." });
+    const body = await lib.readBody(req);
+    const { orderId, paymentId, signature, packId } = body;
+    const pack = lib.CREDIT_PACKS.find((p) => p.id === packId);
+    if (!orderId || !paymentId || !signature || !pack)
+      return lib.json(res, 400, { error: "Missing payment fields." });
+    const expected = crypto.createHmac("sha256", keySecret).update(orderId + "|" + paymentId).digest("hex");
+    if (expected !== signature) return lib.json(res, 400, { error: "Payment verification failed." });
+    const db = lib.db();
+    const dup = await db.collection("dashUsers").doc(a.uid).collection("ledger")
+      .where("meta.paymentId", "==", paymentId).limit(1).get().catch(() => ({ empty: true }));
+    if (!dup.empty) {
+      const credits = await lib.getCredits(a.uid);
+      return lib.json(res, 200, { credited: false, credits, note: "Already credited." });
+    }
+    const credits = await lib.addCredits(a.uid, pack.credits, "purchase", { paymentId, orderId, packId });
+    return lib.json(res, 200, { credited: true, credits });
+  }
+
+  // via rewrite: /api/voucher -> /api/credits?do=voucher (POST {code})
+  if (req.query.do === "voucher" && req.method === "POST") {
+    const body = await lib.readBody(req);
+    try {
+      const code = String(body.code || "").trim();
+      const amount = lib.VOUCHERS[code] || 0;
+      const credits = await lib.redeemVoucher(a.uid, code);
+      await lib.fireEvent(a.uid, "voucher.redeemed", { code, credits }).catch(() => {});
+      await lib.notify(a.uid, `Voucher redeemed: +${amount} credits (balance ${credits}).`, "info").catch(() => {});
+      return lib.json(res, 200, { redeemed: true, credits });
+    } catch (e) {
+      return lib.json(res, lib.errCode(e), { error: e.message || "Could not redeem voucher." });
+    }
+  }
 
   if (req.method === "GET") {
     const db = lib.db();
