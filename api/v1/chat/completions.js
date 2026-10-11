@@ -1,8 +1,8 @@
 /* POST /api/v1/chat/completions — OpenAI-compatible alias.
    Body: { model: "<slug or label>", messages, stream?, max_tokens?, temperature?, top_p? }
    Lets any OpenAI client point at the MNAI API by just changing base_url. */
-const lib = require("../_lib");
-const chat = require("../_chat");
+const lib = require("../../_lib");
+const chat = require("../../_chat");
 
 module.exports = async (req, res) => {
   if (req.method === "OPTIONS") { lib.cors(res); res.status(200).end(); return; }
