@@ -5,6 +5,24 @@ const lib = require("./_lib");
 module.exports = async (req, res) => {
   if (req.method === "OPTIONS") { lib.cors(res); res.status(200).end(); return; }
   if (!lib.backendReady()) return lib.json(res, 503, { error: "Backend not configured (FIREBASE_SERVICE_ACCOUNT)." });
+
+  // via rewrite: /api/notifications -> /api/me?do=notifications
+  if (req.query.do === "notifications") {
+    try {
+      const a = await lib.requireFirebase(req);
+      const ref = lib.db().collection("dashUsers").doc(a.uid);
+      if (req.method === "POST") {
+        const s = await ref.get();
+        const n = ((s.exists && s.data().notifications) || []).map((x) => ({ ...x, read: true }));
+        await ref.set({ notifications: n }, { merge: true });
+        return lib.json(res, 200, { ok: true });
+      }
+      const s = await ref.get();
+      const n = (s.exists && s.data().notifications) || [];
+      return lib.json(res, 200, { notifications: n, unread: n.filter((x) => !x.read).length });
+    } catch (e) { return lib.json(res, lib.errCode(e), { error: e.message }); }
+  }
+
   try {
     const a = await lib.requireFirebase(req);
     const db = lib.db();
