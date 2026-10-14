@@ -49,6 +49,7 @@ function initFirebase(){
       $("#sideEmail").textContent = u.email || "";
       const av = (name[0]||"?").toUpperCase();
       $("#sideAvatar").textContent = av; $("#userAvatar").textContent = av;
+      render(); // skeleton pass — instant paint while data loads
       await refreshAll();
       updateBell();
     } else if (currentRoute() !== "share") {
@@ -77,13 +78,20 @@ async function api(path, opts){
 /* ---------- state ---------- */
 let PROFILE = null;   // /api/me
 let CATALOG = [];     // /api/models
+try { const _cc = JSON.parse(localStorage.getItem("dashmnai.catalog") || "null");
+  if (Array.isArray(_cc) && _cc.length) CATALOG = _cc; } catch(e){}
 let THEME = localStorage.getItem("dashmnai.theme") || "dark";
 
 async function refreshAll(){
   try {
-    const [me, models] = await Promise.all([ api("/api/me"), api("/api/models", {auth:false}) ]);
+    const [me, models, wh] = await Promise.all([
+      api("/api/me"),
+      api("/api/models", {auth:false}),
+      api("/api/webhooks").catch(()=>null),
+    ]);
     PROFILE = me; CATALOG = models.models || [];
-    try { const w = await api("/api/webhooks"); PROFILE.hookCount = (w.hooks||[]).length; } catch(e){}
+    try { localStorage.setItem("dashmnai.catalog", JSON.stringify(CATALOG)); } catch(e){}
+    if (wh) PROFILE.hookCount = (wh.hooks||[]).length;
   } catch (e) {
     // backend may not be configured yet
     PROFILE = PROFILE || { credits: 0, keys: [], usage30d: [], recentLogs: [], ledger: [] };
@@ -211,8 +219,9 @@ function statusBadge(k){
   return '<span class="badge green">Active</span>';
 }
 function freeBadge(m){
-  return m.free ? '<span class="badge green">FREE</span>'
-    : '<span class="badge amber">'+m.rate+' credits / 1K tokens</span>';
+  const isNew = m.isNew ? '<span class="badge blue">NEW</span>' : '';
+  return (m.free ? '<span class="badge green">FREE</span>'
+    : '<span class="badge amber">'+m.rate+' credits / 1K tokens</span>') + isNew;
 }
 function deltaHTML(cur, prev, invert){
   if (prev == null || prev === 0) return '<span class="delta-flat">—</span>';
@@ -846,10 +855,23 @@ function render(){
   const r = currentRoute(), route = ROUTES[r];
   $$("#nav a").forEach(a=>a.classList.toggle("active", a.dataset.route===r));
   document.title = route.title + " · MNAI Console";
-  $("#page").innerHTML = route.page();
-  if (route.mount) route.mount();
+  if (!PROFILE) {
+    $("#page").innerHTML = skelPage(route.title);
+  } else {
+    $("#page").innerHTML = route.page();
+    if (route.mount) route.mount();
+  }
   document.body.classList.remove("nav-open");
   window.scrollTo(0,0);
+}
+
+/* ---------- skeleton screens ---------- */
+function skelPage(title){
+  const card = `<div class="card"><div class="skel" style="height:15px;width:42%;margin-bottom:12px"></div><div class="skel" style="height:30px;width:68%"></div></div>`;
+  const row = `<div class="skel" style="height:46px;margin-bottom:8px"></div>`;
+  return `<div class="page-head"><div><h1>${esc(title)}</h1><p>Loading…</p></div></div>
+  <div class="grid stats">${card.repeat(4)}</div>
+  <div class="card" style="margin-top:16px"><div class="skel" style="height:16px;width:28%;margin-bottom:14px"></div>${row.repeat(5)}</div>`;
 }
 
 /* ---------- theme ---------- */
