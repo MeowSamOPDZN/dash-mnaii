@@ -50,6 +50,7 @@ module.exports = async (req, res) => {
       ledger: ledgerSnap.docs.map((d) => d.data()),
       notifications: u.notifications || [],
       unread: (u.notifications || []).filter((x) => !x.read).length,
+      redeemedVouchers: u.redeemedVouchers || [],
     });
   } catch (e) {
     lib.json(res, lib.errCode(e), { error: e.message || "Server error." });
