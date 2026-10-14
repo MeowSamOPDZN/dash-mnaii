@@ -494,6 +494,19 @@ function pageLogs(){
 function mountLogs(){}
 
 /* ---------- settings ---------- */
+function voucherListHTML(){
+  const claimed = (PROFILE.redeemedVouchers || []);
+  const ledger = (PROFILE.ledger || []).filter(e=>e.reason==="voucher");
+  if (!claimed.length && !ledger.length)
+    return '<p style="color:var(--text-3);font-size:12.5px;margin:4px 0 0">No vouchers claimed yet.</p>';
+  const rows = claimed.map(code=>{
+    const entry = ledger.find(e=>e.meta && e.meta.code===code);
+    const when = entry ? new Date(entry.ts).toLocaleDateString() : "";
+    const amt = entry ? `+${fmtInt(entry.delta)} credits` : "";
+    return `<div class="ledger-row"><div><span class="mono">${esc(code)}</span> <span class="badge green">Claimed</span><small>${amt}${when?" · "+when:""}</small></div></div>`;
+  }).join("");
+  return `<div style="font-size:12px;color:var(--text-3);margin:10px 0 2px;font-weight:700;text-transform:uppercase;letter-spacing:.06em">Your vouchers</div>${rows}`;
+}
 function pageSettings(){
   const t=THEME;
   const ledger=(PROFILE.ledger||[]).slice(0,10);
@@ -506,6 +519,7 @@ function pageSettings(){
         <div style="display:flex;gap:8px"><input type="number" id="spendCapInput" placeholder="Unlimited" min="1" value="${PROFILE.spendCap||""}" style="width:110px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-size:13px;padding:8px 12px;outline:none"><button class="btn sm" id="spendCapBtn">Save</button></div></div>
       <div class="row-between"><div><div class="t">Redeem voucher</div><div class="d">Have a code? Get free credits.</div></div>
         <div style="display:flex;gap:8px"><input type="text" id="voucherInput" placeholder="Enter code" style="width:130px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-size:13px;padding:8px 12px;outline:none;font-family:var(--mono)"><button class="btn sm" id="voucherBtn">Redeem</button></div></div>
+      <div id="voucherList">${voucherListHTML()}</div>
       ${ledger.map(e=>`<div class="ledger-row"><div>${esc(e.reason||"")}<small>${new Date(e.ts).toLocaleString()}</small></div><span class="${e.delta>=0?"pos":"neg"}">${e.delta>=0?"+":""}${e.delta}</span></div>`).join("") || '<p style="color:var(--text-3);font-size:13px">No transactions yet.</p>'}
     </div>
     <div class="card"><div class="card-head"><h2>Appearance</h2></div>
@@ -554,43 +568,73 @@ let PG = { slug: "mnai6", cmp: null, temp: 0.7, maxTok: 1024, sys: "",
            hist: {}, abort: null, busy: false };
 function pgHist(slug){ return PG.hist[slug] || (PG.hist[slug] = []); }
 function pgOpts(){ return { temperature: PG.temp, max_tokens: PG.maxTok }; }
+
+/* inline SVG icons */
+const SVG = {
+  send: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/></svg>',
+  stop: '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2.5"/></svg>',
+  regen: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.5 9a9 9 0 0114.9-3.4L23 10"/><path d="M1 14l4.6 4.4A9 9 0 0020.5 15"/></svg>',
+  share: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4"/></svg>',
+  code: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 18l6-6-6-6"/><path d="M8 6l-6 6 6 6"/></svg>',
+  copy: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 012-2h10"/></svg>',
+  trash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6"/></svg>',
+  sliders: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 21v-7"/><path d="M4 10V3"/><path d="M12 21v-9"/><path d="M12 8V3"/><path d="M20 21v-5"/><path d="M20 12V3"/><path d="M1 14h6"/><path d="M9 8h6"/><path d="M17 16h6"/></svg>',
+  cols: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M12 3v18"/></svg>',
+  bolt: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>',
+  spark: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.1 7.9L22 12l-7.9 2.1L12 22l-2.1-7.9L2 12l7.9-2.1z"/></svg>',
+  user: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>',
+  check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>',
+};
+
 function pagePlayground(){
   const q = new URLSearchParams((location.hash.split("?")[1]||""));
   const fromQ = q.get("model");
   if (fromQ && CATALOG.some(m=>m.slug===fromQ)) PG.slug = fromQ;
-  const def = CATALOG.find(m=>m.slug===PG.slug) || CATALOG[0];
+  const def = CATALOG.find(m=>m.slug===PG.slug) || CATALOG[0] || {slug:"mnai6",label:"MNAI 6",free:true,rate:0};
   const cmpDef = PG.cmp ? CATALOG.find(m=>m.slug===PG.cmp) : null;
   const opt = (sel)=>CATALOG.map(m=>`<option value="${m.slug}"${m.slug===sel?" selected":""}>${esc(m.label)}${m.free?"":" · "+m.rate+"cr"}</option>`).join("");
   return `
-  <div class="page-head"><div><h1>Playground</h1><p>Try every model. Nothing is logged as an API call.</p></div>
-    <div class="page-actions">
-      <button class="chip-btn" id="pgShareBtn" title="Copy a public share link">Share</button>
-      <button class="chip-btn" id="pgSnippetBtn" title="Copy code for this model">Copy as</button>
-      <button class="chip-btn" id="pgRegenBtn" title="Regenerate last answer" style="display:none">Regenerate</button>
-      <button class="chip-btn" id="pgStopBtn" title="Stop generating" style="display:none">Stop</button>
-    </div></div>
-  <div class="pg-toolbar">
-    <select id="pgModel" class="btn sm" style="font-size:13px">${opt(PG.slug)}</select>
-    <label class="fld">Temp <input type="range" id="pgTemp" min="0" max="2" step="0.1" value="${PG.temp}"><span class="val" id="pgTempV">${PG.temp}</span></label>
-    <label class="fld">Max tokens <input type="number" id="pgMax" min="64" max="4096" step="64" value="${PG.maxTok}"></label>
-    <div class="pg-actions">
-      <button class="chip-btn" id="pgSysBtn">System prompt</button>
-      <button class="chip-btn ${PG.cmp?"on":""}" id="pgCmpBtn">Compare</button>
-      <select id="pgCmpSel" class="btn sm" style="font-size:13px;${PG.cmp?"":"display:none"}">${opt(PG.cmp||"mnai7")}</select>
+  <div class="pg-shell">
+    <div class="pg-head">
+      <div class="pg-model">
+        <span class="pg-avatar">${SVG.spark}</span>
+        <div><h1>${esc(def.label)}</h1><p>${esc(def.blurb||"")}</p></div>
+        ${def.free?'<span class="badge green">FREE</span>':`<span class="badge amber">${def.rate} credits / 1K</span>`}
+        ${def.isNew?'<span class="badge blue">NEW</span>':''}
+      </div>
+      <div class="pg-tools">
+        <button class="pg-iconbtn" id="pgShareBtn" title="Share chat link">${SVG.share}</button>
+        <button class="pg-iconbtn" id="pgSnippetBtn" title="Copy code snippet">${SVG.code}</button>
+        <button class="pg-iconbtn" id="pgRegenBtn" title="Regenerate last answer" style="display:none">${SVG.regen}</button>
+        <button class="pg-iconbtn danger" id="pgStopBtn" title="Stop generating" style="display:none">${SVG.stop}</button>
+        <button class="pg-iconbtn" id="pgClearBtn" title="Clear chat">${SVG.trash}</button>
+      </div>
     </div>
-  </div>
-  <div id="pgSysRow" class="${PG.sys?"open":""}"><div style="padding:12px 0 4px"><textarea id="pgSys" placeholder="Optional system instruction for this session…">${esc(PG.sys)}</textarea></div></div>
-  <div class="pg-cols ${PG.cmp?"cmp":""}">
-    <div><div class="pg-col-label" style="${PG.cmp?"":"display:none"}">${esc(def?def.label:"")}</div><div id="pgChat" class="pg-chat"></div></div>
-    <div><div class="pg-col-label" style="${PG.cmp?"":"display:none"}">${esc(cmpDef?cmpDef.label:"")}</div><div id="pgChat2"></div></div>
-  </div>
-  <div class="est-line" id="pgEst"></div>
-  <div class="pg-inputbar">
-    <input type="text" id="pgInput" placeholder="Message ${esc(def?def.label:"model")}…  (Enter to send)" autocomplete="off">
-    <button class="btn blue" id="pgSend">Send</button>
-  </div>
-  <div id="pgShareBox"></div>`;
+    <div class="pg-toolbar">
+      <select id="pgModel" class="pg-select">${opt(PG.slug)}</select>
+      <label class="fld" title="Creativity"><span class="fld-ico">${SVG.sliders}</span><input type="range" id="pgTemp" min="0" max="2" step="0.1" value="${PG.temp}"><span class="val" id="pgTempV">${PG.temp.toFixed(1)}</span></label>
+      <label class="fld" title="Max tokens">Max <input type="number" id="pgMax" min="64" max="4096" step="64" value="${PG.maxTok}"></label>
+      <div class="pg-actions">
+        <button class="chip-btn" id="pgSysBtn">System prompt</button>
+        <button class="chip-btn ${PG.cmp?"on":""}" id="pgCmpBtn"><span class="chip-ico">${SVG.cols}</span>Compare</button>
+        <select id="pgCmpSel" class="pg-select" style="${PG.cmp?"":"display:none"}">${opt(PG.cmp||"mnai7")}</select>
+      </div>
+    </div>
+    <div id="pgSysRow" class="${PG.sys?"open":""}"><textarea id="pgSys" placeholder="Optional system instruction for this session…">${esc(PG.sys)}</textarea></div>
+    <div class="pg-cols ${PG.cmp?"cmp":""}">
+      <div class="pg-col"><div class="pg-col-label" style="${PG.cmp?"":"display:none"}">${esc(def.label)}</div><div id="pgChat" class="pg-chat"></div></div>
+      <div class="pg-col"><div class="pg-col-label" style="${PG.cmp?"":"display:none"}">${esc(cmpDef?cmpDef.label:"")}</div><div id="pgChat2"></div></div>
+    </div>
+    <div class="est-line" id="pgEst"></div>
+    <div class="pg-inputbar">
+      <div class="pg-creditpill" id="pgCredits" title="Your credit balance">${SVG.bolt}<b>${fmtInt(PROFILE.credits||0)}</b></div>
+      <input type="text" id="pgInput" placeholder="Message ${esc(def.label)}…  (Enter to send)" autocomplete="off">
+      <button class="pg-send" id="pgSend" title="Send">${SVG.send}</button>
+    </div>
+    <div id="pgShareBox"></div>
+  </div>`;
 }
+
 function mountPlayground(){
   pgRenderHist(PG.slug, $("#pgChat"));
   if (PG.cmp) pgRenderHist(PG.cmp, $("#pgChat2"));
@@ -607,6 +651,7 @@ function mountPlayground(){
   $("#pgShareBtn").onclick = pgShare;
   $("#pgSnippetBtn").onclick = pgSnippet;
   $("#pgRegenBtn").onclick = pgRegen;
+  $("#pgClearBtn").onclick = ()=>{ PG.hist[PG.slug] = []; if (PG.cmp) PG.hist[PG.cmp] = []; render(); toast("Chat cleared"); };
   $("#pgStopBtn").onclick = ()=>{ if (PG.abort) PG.abort.abort(); };
   const inp = $("#pgInput");
   inp.focus();
@@ -616,30 +661,65 @@ function mountPlayground(){
   inp.oninput = ()=>{ clearTimeout(estT); estT = setTimeout(pgEstimate, 500); };
   pgEstimate();
 }
+
 function pgRenderHist(slug, el){
   const h = pgHist(slug);
-  el.innerHTML = h.length ? h.map(m=>`<div class="pg-msg ${m.role}">${esc(m.text)}</div>`).join("")
-    : `<div class="pg-empty"><div class="pg-empty-ico">✦</div><p>Ask anything — try "Who is your owner?"</p></div>`;
+  el.innerHTML = h.length ? h.map(m=>pgMsgHTML(m)).join("")
+    : `<div class="pg-empty"><div class="pg-empty-ico">${SVG.spark}</div>
+       <p>Ask anything — try "Who is your owner?"</p>
+       <div class="pg-suggest">${["Who is your owner?","Write a haiku about code","Explain quantum computing simply"].map(s=>`<button class="chip-btn" data-sug="${esc(s)}">${esc(s)}</button>`).join("")}</div></div>`;
+  el.querySelectorAll("[data-sug]").forEach(b=>b.onclick=()=>{ $("#pgInput").value = b.dataset.sug; pgSend(); });
+  el.querySelectorAll("[data-copy]").forEach(b=>b.onclick=()=>copyText(b.dataset.copy,"Copied"));
   el.scrollTop = el.scrollHeight;
 }
-function pgBubble(el, role){
-  const d = document.createElement("div");
-  d.className = "pg-msg " + role;
-  el.appendChild(d); el.scrollTop = el.scrollHeight;
-  return d;
+
+function pgMsgHTML(m){
+  if (m.role === "user")
+    return `<div class="pg-row user"><div class="pg-bubble user">${esc(m.text)}</div><span class="pg-who">${SVG.user}</span></div>`;
+  const cost = m.charged ? `<span class="pg-cost">${SVG.bolt}−${m.charged} credit${m.charged===1?"":"s"}</span>` : "";
+  const copy = m.text ? `<button class="pg-mini" data-copy="${esc(m.text)}" title="Copy">${SVG.copy}</button>` : "";
+  return `<div class="pg-row ai"><span class="pg-who ai">${SVG.spark}</span>
+    <div><div class="pg-bubble ai">${esc(m.text)}</div>
+    <div class="pg-meta">${copy}${cost}</div></div></div>`;
 }
+
+function pgBubble(el, role){
+  const wrap = document.createElement("div");
+  wrap.className = "pg-row " + role;
+  wrap.innerHTML = role === "user"
+    ? `<div class="pg-bubble user"></div><span class="pg-who">${SVG.user}</span>`
+    : `<span class="pg-who ai">${SVG.spark}</span><div><div class="pg-bubble ai"></div><div class="pg-meta"></div></div>`;
+  el.appendChild(wrap); el.scrollTop = el.scrollHeight;
+  return wrap.querySelector(".pg-bubble");
+}
+
+function pgFinishBubble(el, text, charged){
+  // re-render the last row of this column with full metadata
+  const rows = el.querySelectorAll(".pg-row.ai");
+  const last = rows[rows.length - 1];
+  if (last) {
+    const tmp = document.createElement("div");
+    tmp.innerHTML = pgMsgHTML({ role: "assistant", text, charged });
+    last.replaceWith(tmp.firstChild);
+    tmp.querySelector("[data-copy]")?.addEventListener("click", e=>copyText(text,"Copied"));
+  }
+  el.scrollTop = el.scrollHeight;
+}
+
 async function pgRun(slug, text, el){
   const hist = pgHist(slug);
   hist.push({ role: "user", text });
+  pgRenderHist(slug, el);
   const ai = pgBubble(el, "ai");
   ai.innerHTML = '<span class="pg-think"><span class="spin"></span> thinking…</span>';
   const msgs = [];
   if (PG.sys.trim()) msgs.push({ role: "system", content: PG.sys.trim().slice(0,2000) });
-  hist.filter(m=>m.role!=="thinking").forEach(m=>msgs.push({ role: m.role, content: m.text }));
+  hist.forEach(m=>{ if (m.role==="user"||m.role==="assistant") msgs.push({ role: m.role, content: m.text }); });
   const ctrl = new AbortController();
   PG.abort = ctrl;
   $("#pgStopBtn").style.display = "";
-  let out = "";
+  $("#pgSend").classList.add("hidden");
+  let out = "", charged = 0;
   try {
     const r = await fetch("/api/mnaiapi/" + slug, {
       method: "POST", signal: ctrl.signal,
@@ -651,6 +731,7 @@ async function pgRun(slug, text, el){
       const j = await r.json();
       if (!r.ok) throw new Error(j.error || ("Request failed (" + r.status + ")"));
       out = (j.choices && j.choices[0] && j.choices[0].message.content) || "";
+      charged = j.credits_charged || 0;
       ai.textContent = out;
     } else {
       if (!r.ok) throw new Error("Request failed (" + r.status + ")");
@@ -660,88 +741,87 @@ async function pgRun(slug, text, el){
         const { done, value } = await reader.read();
         if (done) break;
         buf += decoder.decode(value, { stream: true });
-        const parts = buf.split("\n\n"); buf = parts.pop();
+        const parts = buf.split("\\n\\n"); buf = parts.pop();
         for (const p of parts) {
           if (!p.startsWith("data:")) continue;
           const data = p.slice(5).trim();
           if (data === "[DONE]") continue;
           try {
-            const tok = JSON.parse(data).choices[0].delta.content || "";
+            const j = JSON.parse(data);
+            if (j.credits_charged != null) { charged = j.credits_charged; continue; }
+            const tok = (j.choices && j.choices[0] && j.choices[0].delta && j.choices[0].delta.content) || "";
             if (tok) { if (!started) { ai.textContent = ""; started = true; } out += tok; ai.textContent = out; el.scrollTop = el.scrollHeight; }
           } catch (e) {}
         }
       }
       if (!out) ai.innerHTML = '<span style="color:var(--text-3)">(empty response)</span>';
     }
-    hist.push({ role: "assistant", text: out });
-    refreshAll().catch(()=>{});
+    hist.push({ role: "assistant", text: out, charged });
+    pgFinishBubble(el, out, charged);
+    await refreshAll().catch(()=>{});
+    const pc = $("#pgCredits"); if (pc) pc.innerHTML = `${SVG.bolt}<b>${fmtInt(PROFILE.credits||0)}</b>`;
   } catch (e) {
-    if (e.name === "AbortError") { ai.innerHTML = esc(out) + ' <span style="color:var(--text-3)">(stopped)</span>'; hist.push({ role: "assistant", text: out }); }
+    if (e.name === "AbortError") {
+      hist.push({ role: "assistant", text: out, charged });
+      pgFinishBubble(el, out + " (stopped)", charged);
+    }
     else { ai.innerHTML = `<span style="color:var(--red)">Error: ${esc(e.message)}</span>`; }
   } finally {
     if (PG.abort === ctrl) PG.abort = null;
     $("#pgStopBtn").style.display = "none";
+    $("#pgSend").classList.remove("hidden");
     $("#pgRegenBtn").style.display = "";
   }
 }
+
 async function pgSend(){
   const text = $("#pgInput").value.trim();
   if (!text || PG.busy) return;
   PG.busy = true;
   $("#pgInput").value = "";
-  pgRenderHist(PG.slug, $("#pgChat"));
+  $("#pgEst").textContent = "";
   const jobs = [pgRun(PG.slug, text, $("#pgChat"))];
-  if (PG.cmp) { pgRenderHist(PG.cmp, $("#pgChat2")); jobs.push(pgRun(PG.cmp, text, $("#pgChat2"))); }
+  if (PG.cmp) jobs.push(pgRun(PG.cmp, text, $("#pgChat2")));
   await Promise.all(jobs);
   PG.busy = false;
 }
+
 function pgRegen(){
   const hist = pgHist(PG.slug);
-  const lastUser = [...hist].reverse().find(m=>m.role==="user");
-  if (!lastUser || PG.busy) return;
-  hist.pop(); // remove last assistant
-  const idx = hist.lastIndexOf(lastUser); if (idx >= 0) hist.splice(idx, 1);
-  pgRenderHist(PG.slug, $("#pgChat"));
+  const li = [...hist].reverse().findIndex(m=>m.role==="user");
+  if (li < 0 || PG.busy) return;
+  const lastUser = hist[hist.length - 1 - li];
+  PG.hist[PG.slug] = hist.slice(0, hist.length - li);
   (async ()=>{ PG.busy = true; await pgRun(PG.slug, lastUser.text, $("#pgChat")); PG.busy = false; })();
 }
+
 async function pgShare(){
   const hist = pgHist(PG.slug);
-  const clean = hist.filter(m=>m.role==="user"||m.role==="assistant").map(m=>({role:m.role==="user"?"user":"assistant", content:m.text}));
+  const clean = hist.filter(m=>m.role==="user"||m.role==="assistant").map(m=>({role:m.role, content:m.text}));
   if (!clean.length) { toast("Nothing to share yet.", "err"); return; }
   try {
     const r = await api("/api/share", { method: "POST", body: { model: PG.slug, messages: clean } });
-    $("#pgShareBox").innerHTML = `<div class="share-box" style="margin:0 18px 14px"><code>${esc(r.url)}</code>
+    $("#pgShareBox").innerHTML = `<div class="share-box" style="margin:0 0 14px"><code>${esc(r.url)}</code>
       <button class="btn sm blue" id="pgCopyShare">Copy</button></div>`;
-    $("#pgCopyShare").onclick = ()=>{ navigator.clipboard.writeText(r.url).then(()=>toast("Share link copied")); };
+    $("#pgCopyShare").onclick = ()=>copyText(r.url,"Share link copied");
     toast("Share link created");
   } catch(e){ toast(e.message, "err"); }
 }
-function pgSnippet(){
-  const def = CATALOG.find(m=>m.slug===PG.slug);
-  const lastUser = [...pgHist(PG.slug)].reverse().find(m=>m.role==="user");
-  const msg = (lastUser ? lastUser.text : "Hello!").replace(/"/g, '\"').slice(0,200);
-  const curl = `curl -X POST https://dash-mnaii.vercel.app/api/mnaiapi/${PG.slug} \\n  -H "Authorization: Bearer YOUR_KEY" \\n  -H "Content-Type: application/json" \\n  -d '{"messages":[{"role":"user","content":"${msg}"}]}'`;
-  const py = `from openai import OpenAI
 
-client = OpenAI(base_url="https://dash-mnaii.vercel.app/api/v1", api_key="YOUR_KEY")
-r = client.chat.completions.create(model="${PG.slug}", messages=[{"role": "user", "content": "${msg}"}])
-print(r.choices[0].message.content)`;
-  const js = `const r = await fetch("https://dash-mnaii.vercel.app/api/mnaiapi/${PG.slug}", {
-  method: "POST",
-  headers: { "Content-Type": "application/json", Authorization: "Bearer YOUR_KEY" },
-  body: JSON.stringify({ messages: [{ role: "user", content: "${msg}" }] } }),
-});
-const j = await r.json();
-console.log(j.choices[0].message.content);`;
-  openModal(`<div class="modal-head"><div><h2>Call ${esc(def?def.label:PG.slug)} from code</h2><p>Pick a language and paste.</p></div><button class="modal-x" onclick="closeModal()">×</button></div>
-  <div class="modal-body">
-    <div class="field"><label>cURL</label><pre class="api-hint"><code>${esc(curl)}</code><button class="copy-btn" data-copy="${esc(curl)}"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 012-2h10"/></svg></button></pre></div>
-    <div class="field"><label>Python</label><pre class="api-hint"><code>${esc(py)}</code><button class="copy-btn" data-copy="${esc(py)}"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 012-2h10"/></svg></button></pre></div>
-    <div class="field"><label>JavaScript</label><pre class="api-hint"><code>${esc(js)}</code><button class="copy-btn" data-copy="${esc(js)}"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 012-2h10"/></svg></button></pre></div>
-  </div>
+function pgSnippet(){
+  const def = CATALOG.find(m=>m.slug===PG.slug) || {label:PG.slug};
+  const lastUser = [...pgHist(PG.slug)].reverse().find(m=>m.role==="user");
+  const msg = (lastUser ? lastUser.text : "Hello!").replace(/"/g, '\\"').slice(0,200);
+  const curl = `curl -X POST https://dash-mnaii.vercel.app/api/mnaiapi/${PG.slug} \\\n  -H "Authorization: Bearer YOUR_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d '{"messages":[{"role":"user","content":"${msg}"}]}'`;
+  const py = `from openai import OpenAI\n\nclient = OpenAI(base_url="https://dash-mnaii.vercel.app/api/v1", api_key="YOUR_KEY")\nr = client.chat.completions.create(model="${PG.slug}", messages=[{"role": "user", "content": "${msg}"}])\nprint(r.choices[0].message.content)`;
+  const js = `const r = await fetch("https://dash-mnaii.vercel.app/api/mnaiapi/${PG.slug}", {\n  method: "POST",\n  headers: { "Content-Type": "application/json", Authorization: "Bearer YOUR_KEY" },\n  body: JSON.stringify({ messages: [{ role: "user", content: "${msg}" }] }),\n});\nconst j = await r.json();\nconsole.log(j.choices[0].message.content);`;
+  const blk = (label, code)=>`<div class="field"><label>${label}</label><pre class="api-hint"><code>${esc(code)}</code><button class="copy-btn" data-copy="${esc(code)}">${SVG.copy}</button></pre></div>`;
+  openModal(`<div class="modal-head"><div><h2>Call ${esc(def.label)} from code</h2><p>Pick a language and paste.</p></div><button class="modal-x" onclick="closeModal()">×</button></div>
+  <div class="modal-body">${blk("cURL",curl)}${blk("Python",py)}${blk("JavaScript",js)}</div>
   <div class="modal-foot"><button class="btn primary" onclick="closeModal()">Done</button></div>`);
   bindCopy($("#modal"));
 }
+
 async function pgEstimate(){
   const el = $("#pgEst"); if (!el) return;
   const text = $("#pgInput") ? $("#pgInput").value.trim() : "";
@@ -749,8 +829,8 @@ async function pgEstimate(){
   try {
     const r = await fetch("/api/estimate", { method: "POST", headers: {"Content-Type":"application/json"},
       body: JSON.stringify({ model: PG.slug, messages: [{role:"user",content:text}], max_tokens: PG.maxTok }) }).then(r=>r.json());
-    el.textContent = r.free ? `~${fmtInt(r.estimated_tokens)} tokens · free`
-      : `~${fmtInt(r.estimated_tokens)} tokens · ~${r.estimated_credits} credit${r.estimated_credits===1?"":"s"}`;
+    el.innerHTML = `${SVG.bolt}<span>` + (r.free ? `~${fmtInt(r.estimated_tokens)} tokens · free`
+      : `~${fmtInt(r.estimated_tokens)} tokens · ~${r.estimated_credits} credit${r.estimated_credits===1?"":"s"} will be spent`) + `</span>`;
   } catch(e){}
 }
 
