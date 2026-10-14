@@ -48,10 +48,17 @@ const MODELS = {
                blurb: "550B-class reasoning. Costs credits." },
   "glyph3":  { label: "Glyph 3",     free: false, rate: 3, provider: "xkiro2", model: "stealth/space-bunny-alpha:free",
                blurb: "Stealth-tier chat. Costs credits." },
+  "mnai8":   { label: "MNAI 8",        free: false, rate: 2, provider: "xkiro", model: "meituan/longcat-2.5-preview:free",
+               blurb: "Best free chat on the site — Pro here. Costs credits.", isNew: true },
+  "mnai8pro":{ label: "MNAI 8 Pro",    free: false, rate: 4, provider: "xkiro", model: "meituan/longcat-2.0",
+               blurb: "Flagship. Best overall. Costs credits.", isNew: true },
+  "prowl":   { label: "MNAI Prowl",    free: false, rate: 3, provider: "xkiro", model: "qwen/qwen3.8-max:free",
+               blurb: "Agentic AI. Costs credits.", isNew: true },
 };
 function publicCatalog() {
   return Object.entries(MODELS).map(([slug, m]) => ({
     slug, label: m.label, free: m.free, rate: m.free ? 0 : m.rate, blurb: m.blurb,
+    isNew: !!m.isNew,
   }));
 }
 
