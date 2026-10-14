@@ -84,6 +84,7 @@ module.exports = async (req, res) => {
           }
         }
       }
+      res.write(`data: ${JSON.stringify({ credits_charged: charged, tokens: tot, model: slug })}\n\n`);
       res.write("data: [DONE]\n\n"); res.end();
       const tot = total || (chat.estimateTokens(JSON.stringify(withSys)) + chat.estimateTokens(full));
       let charged = 0;
