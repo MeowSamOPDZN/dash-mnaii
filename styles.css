@@ -523,3 +523,8 @@ html[data-theme="light"] .skel::after{background:linear-gradient(90deg,transpare
 .pg-send svg{width:19px;height:19px}
 .pg-think{display:inline-flex;align-items:center;gap:8px;color:var(--text-3);font-size:13px}
 @media(max-width:900px){.pg-cols.cmp{grid-template-columns:1fr}.pg-cols.cmp .pg-col:first-child{border-right:none;border-bottom:1px solid var(--border)}.pg-model p{display:none}}
+
+/* live-update indicator */
+.live-tag{font-size:11.5px;color:var(--text-3);display:inline-flex;align-items:center;gap:0;white-space:nowrap}
+.live-dot{width:7px;height:7px;border-radius:50%;background:var(--green);display:inline-block;margin-right:6px;animation:livedot 2s ease-in-out infinite}
+@keyframes livedot{0%,100%{opacity:1}50%{opacity:.3}}
