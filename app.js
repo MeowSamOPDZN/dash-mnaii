@@ -102,6 +102,28 @@ async function refreshAll(){
   render();
 }
 
+/* ---------- live updates: overview / usage / logs refresh themselves ---------- */
+const LIVE_ROUTES = ["overview", "usage", "logs"];
+let liveTimer = null;
+async function pollLive(){
+  if (document.hidden || !USER || !PROFILE) return;
+  if (!LIVE_ROUTES.includes(currentRoute())) return;
+  try {
+    PROFILE = await api("/api/me");
+    $("#creditsVal").textContent = fmtInt(PROFILE.credits || 0);
+    const r = currentRoute(), route = ROUTES[r];
+    if (!route) return;
+    $("#page").innerHTML = route.page();
+    if (route.mount) route.mount();
+    $$("#nav a").forEach(a=>a.classList.toggle("active", a.dataset.route===r));
+  } catch(e){ /* silent — retry on next tick */ }
+}
+function startLive(){
+  if (liveTimer) return;
+  liveTimer = setInterval(pollLive, 10000);
+  document.addEventListener("visibilitychange", ()=>{ if (!document.hidden) pollLive(); });
+}
+
 /* ---------- charts (canvas, Vercel style) ---------- */
 function setupCanvas(cv, h){
   const dpr = window.devicePixelRatio || 1, w = cv.clientWidth;
@@ -267,7 +289,7 @@ function pageOverview(){
       <div style="margin-top:12px"><a href="#/models" class="btn sm"><span>All ${CATALOG.length} models →</span></a></div>
     </div>
   </div>
-  <div class="card" style="margin-top:16px"><div class="card-head"><h2>Recent activity</h2><a href="#/logs" class="btn sm">View all logs</a></div>
+  <div class="card" style="margin-top:16px"><div class="card-head"><h2>Recent activity</h2><div style="display:flex;align-items:center;gap:12px"><span class="live-tag" title="Updates automatically"><span class="live-dot"></span>Live</span><a href="#/logs" class="btn sm">View all logs</a></div></div>
     <div class="activity">${logs.length ? logs.map(logRow).join("") : '<div class="empty"><h3>No activity yet</h3><p>Call the API or try a model to see usage here.</p></div>'}</div></div>`;
 }
 function logRow(l){
@@ -437,7 +459,7 @@ function pageUsage(){
   return `
   <div class="page-head"><div><h1>Usage</h1><p>Requests, tokens and credits across your account.</p></div>
     <div class="page-actions">
-      <button class="btn sm" id="csvBtn"><span>Export CSV</span></button>
+      <button class="btn sm" id="csvBtn"><span>Export CSV</span></button><span class="live-tag" title="Updates automatically"><span class="live-dot"></span>Live</span>
       <div class="seg" id="uRange">${["7D","30D"].map(r=>`<button data-r="${r}" class="${r===usageRange?"on":""}">${r}</button>`).join("")}</div>
       <div class="seg" id="uMetric">${["requests","tokens","credits"].map(m=>`<button data-m="${m}" class="${m===usageMetric?"on":""}">${m[0].toUpperCase()+m.slice(1)}</button>`).join("")}</div>
     </div></div>
@@ -482,7 +504,7 @@ function mountUsage(){
 function pageLogs(){
   const logs=PROFILE.recentLogs||[];
   return `
-  <div class="page-head"><div><h1>Logs</h1><p>Your recent API requests, newest first.</p></div></div>
+  <div class="page-head"><div><h1>Logs</h1><p>Your recent API requests, newest first.</p></div><div class="page-actions"><span class="live-tag" title="Updates automatically"><span class="live-dot"></span>Live</span></div></div>
   <div class="table-wrap"><table><thead><tr><th>Time</th><th>Model</th><th>Tokens</th><th>Latency</th><th>Credits</th><th>Status</th></tr></thead>
   <tbody>${logs.map(l=>{ const m=modelBySlug(l.model), ok=(l.status||200)<400;
     return `<tr><td style="color:var(--text-3);font-size:12.5px;white-space:nowrap">${new Date(l.ts).toLocaleString()}</td>
@@ -963,6 +985,7 @@ function applyTheme(){
 
 /* ---------- events ---------- */
 window.addEventListener("hashchange", render);
+window.addEventListener("hashchange", ()=>setTimeout(pollLive, 400));
 window.addEventListener("resize", ()=>{ const r=ROUTES[currentRoute()]; if (r && r.mount && USER) r.mount(); });
 document.addEventListener("keydown", e=>{
   const mod = e.metaKey || e.ctrlKey;
@@ -989,6 +1012,7 @@ document.addEventListener("keydown", e=>{
 applyTheme();
 initFirebase();
 bindLogin();
+startLive();
 $("#paletteBtn").onclick = openPalette;
 $("#paletteInput").addEventListener("input", e=>renderPalette(e.target.value));
 $("#paletteOverlay").addEventListener("click", e=>{ if(e.target.id==="paletteOverlay") closePalette(); });
