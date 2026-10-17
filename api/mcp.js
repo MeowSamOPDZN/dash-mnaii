@@ -93,14 +93,15 @@ module.exports = async (req, res) => {
     const args = (body.params && body.params.arguments) || {};
     const slug = Object.keys(lib.MODELS).find((s) => toolName(s) === name);
     if (!slug) return fail(-32602, "Unknown tool: " + name);
-    if (!args.message) return fail(-32602, "Missing required argument: message.");
+    const userMsg = args.message || args.text || args.prompt || args.input || args.query;
+    if (!userMsg) return fail(-32602, "Missing required argument: message.");
     let a;
     try { a = await lib.authReq(req); }
     catch (e) { return fail(-32000, "Auth failed: " + e.message); }
     try {
       const messages = [];
       if (args.system) messages.push({ role: "system", content: String(args.system).slice(0, 2000) });
-      messages.push({ role: "user", content: String(args.message).slice(0, 12000) });
+      messages.push({ role: "user", content: String(userMsg).slice(0, 12000) });
       const r = await chat.runChat(a, slug, { messages, max_tokens: args.max_tokens }, req);
       return reply({ content: [{ type: "text",
         text: r.content + `\n\n[${r.totalTokens} tokens${r.charged ? ` · ${r.charged} credits` : ""}]` }] });
