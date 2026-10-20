@@ -36,7 +36,7 @@ module.exports = async (req, res) => {
         const bal = await lib.getCredits(a.uid);
         if (bal < 1) throw { code: 402, message: `Insufficient credits for ${def.label}.` };
       }
-      const withSys = [{ role: "system", content: ident.systemPrompt(def.label) }, ...messages];
+      const withSys = [{ role: "system", content: ident.systemPrompt(def.label, a.email) }, ...messages];
       const maxTokens = Math.min(Math.max(body.max_tokens || 1024, 1), 4096);
       const upBody = { messages: withSys, max_tokens: maxTokens, stream: true };
       if (body.temperature != null) upBody.temperature = Math.min(Math.max(+body.temperature, 0), 2);
