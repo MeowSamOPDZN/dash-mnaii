@@ -165,9 +165,9 @@ async function runChat(a, slug, body, req) {
   if (!def.free) await checkSpendCap(a.uid);
 
   const t0 = Date.now();
-  const withSys = [{ role: "system", content: ident.systemPrompt(def.label) }, ...messages];
+  const withSys = [{ role: "system", content: ident.systemPrompt(def.label, a.email) }, ...messages];
   const lastUser = [...messages].reverse().find((m) => m.role === "user");
-  const local = lastUser ? ident.identityAnswer(def.label, lastUser.content) : null;
+  const local = lastUser ? ident.identityAnswer(def.label, lastUser.content, a.email) : null;
 
   let content, promptTokens = 0, completionTokens = 0, charged = 0;
   if (local) {
