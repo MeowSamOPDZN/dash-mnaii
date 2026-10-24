@@ -915,7 +915,7 @@ function bindLogin(){
     catch(e){ loginError(friendlyAuthErr(e)); }
   };
   const emailPass = async (mode) => {
-    loginError("");
+    loginError(""); if (mode === "up") { const tc = document.getElementById("termsCheck"); if (tc && !tc.checked) { loginError("Please accept the Terms and Privacy Policy first."); return; } }
     const email = $("#loginEmail").value.trim(), pass = $("#loginPass").value;
     if (!email || !pass) { loginError("Enter your email and password."); return; }
     try {
