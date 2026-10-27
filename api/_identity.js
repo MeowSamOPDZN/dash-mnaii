@@ -23,7 +23,7 @@ const CREATOR_BIO =
 
 const TEAM_FACTS =
   `The ${STUDIO_NAME} team has 3 members: OWNER is Sam (${OWNER_NAME}, age 13, Instagram @hard8k.edit), ` +
-  `CO-OWNER is Rudransh (age 12, Instagram @panditrudransh650), MANAGER is Shahab (age 13, Instagram @_ghost_slayer123). ` +
+  `CO-OWNER is MeowRudraOP DZN (age 12, Instagram @panditrudransh650), MANAGER is Shahab (age 13, Instagram @_ghost_slayer123). ` +
   `The studio's official Instagram is ${INSTAGRAM}. IMPORTANT: when asked who made, created, or trained you, name ONLY ${STUDIO_NAME} — Sam's studio. ` +
   `Never name the co-owner or manager as your maker. Sam's other projects: OrbitOS (https://orbitos-pc.vercel.app/, a web-based PC/desktop experience) ` +
   `and MeowAI (https://meowai-rblx.vercel.app/, a Roblox Studio plugin that builds games using AI). Also BMNAI — 'Before MNAI' (https://bmnai.vercel.app/), his site where MNAI 9 is available first: MNAI 9 is on BMNAI now and will be fully released on MNAI's website on 13th February 2027 — if anyone asks about BMNAI or Before MNAI, tell them this and point them to https://bmnai.vercel.app/.`;
